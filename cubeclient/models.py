@@ -6,6 +6,9 @@ from abc import ABC, abstractmethod
 import datetime
 
 from magiccube.collections.cube import Cube
+from magiccube.collections.meta import MetaCube
+from magiccube.update.cubeupdate import VerboseCubePatch
+
 
 R = t.TypeVar('R', bound = 'RemoteModel')
 
@@ -18,6 +21,23 @@ class ApiClient(ABC):
 
     @abstractmethod
     def versioned_cubes(self, offset: int = 0, limit: int = 10) -> PaginatedResponse[VersionedCube]:
+        pass
+
+    @abstractmethod
+    def patches(
+        self,
+        versioned_cube: t.Union[VersionedCube, int, str],
+        offset: int = 0,
+        limit: int = 10,
+    ) -> PaginatedResponse[PatchModel]:
+        pass
+
+    @abstractmethod
+    def preview_patch(self, patch: t.Union[PatchModel, int, str]) -> MetaCube:
+        pass
+
+    @abstractmethod
+    def verbose_patch(self, patch: t.Union[PatchModel, int, str]) -> VerboseCubePatch:
         pass
 
 
@@ -138,6 +158,8 @@ class VersionedCube(RemoteModel):
         self._created_at = created_at
         self._description = description
 
+        self._patches: t.Optional[PaginatedResponse[PatchModel]] = None
+
     @property
     def name(self) -> str:
         return self._name
@@ -149,6 +171,12 @@ class VersionedCube(RemoteModel):
     @property
     def description(self) -> str:
         return self._description
+
+    @property
+    def patches(self) -> PaginatedResponse[PatchModel]:
+        if self._patches is None:
+            self._patches = self._api_client.patches(self)
+        return self._patches
 
 
 class CubeReleaseMeta(RemoteModel):
@@ -196,3 +224,46 @@ class CubeRelease(CubeReleaseMeta):
     @property
     def cube(self) -> Cube:
         return self._cube
+
+
+class PatchModel(RemoteModel):
+
+    def __init__(
+        self,
+        model_id: t.Union[str, int],
+        created_at: datetime.datetime,
+        name: str,
+        description: str,
+        client: ApiClient,
+    ):
+        super().__init__(model_id, client)
+        self._created_at = created_at
+        self._name = name
+        self._description = description
+
+        self._preview: t.Optional[MetaCube] = None
+        self._verbose: t.Optional[VerboseCubePatch] = None
+
+    @property
+    def created_at(self) -> datetime.datetime:
+        return self._created_at
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def description(self) -> str:
+        return self._description
+
+    @property
+    def preview(self) -> MetaCube:
+        if self._preview is None:
+            self._preview = self._api_client.preview_patch(self)
+        return self._preview
+
+    @property
+    def verbose(self):
+        if self._verbose is None:
+            self._verbose = self._api_client.verbose_patch(self)
+        return self._verbose

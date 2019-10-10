@@ -10,10 +10,13 @@ import datetime
 import requests as r
 
 from cubeclient import models
-from cubeclient.models import PaginatedResponse, VersionedCube
+from cubeclient.models import PaginatedResponse, VersionedCube, PatchModel
+from magiccube.collections.meta import MetaCube
+from magiccube.collections.nodecollection import NodeCollection, GroupMap
 from magiccube.laps.purples.purple import Purple
 from magiccube.laps.tickets.ticket import Ticket
 from magiccube.laps.traps.trap import Trap
+from magiccube.update.cubeupdate import VerboseCubePatch
 from mtgorp.db.database import CardDatabase
 from mtgorp.models.persistent.printing import Printing
 from mtgorp.models.serilization.strategies.jsonid import JsonId
@@ -24,7 +27,7 @@ from yeetlong.multiset import FrozenMultiset
 
 
 class NativeApiClient(models.ApiClient):
-    _DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%f'
+    _DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
 
     def __init__(self, domain: str, db: CardDatabase):
         self._domain = domain
@@ -33,18 +36,19 @@ class NativeApiClient(models.ApiClient):
         self._strategy = RawStrategy(db)
 
     def _make_request(self, endpoint: str, **kwargs) -> t.Any:
-        kwargs.update(native=True)
+        kwargs.update(native = True)
         url = f'http://{self._domain}/api/{endpoint}/'
         print('request to', url, kwargs)
         return r.get(
             url,
             params = kwargs,
         ).json()
+
     def release(self, release_id: int) -> models.CubeRelease:
         result = self._make_request(f'cube-releases/{release_id}')
         return models.CubeRelease(
             model_id = result['id'],
-            created_at = datetime.datetime.strptime(result['created_at'].split('Z')[0], self._DATETIME_FORMAT),
+            created_at = datetime.datetime.strptime(result['created_at'], self._DATETIME_FORMAT),
             name = result['name'],
             intended_size = result['intended_size'],
             cube = RawStrategy(self._db).deserialize(
@@ -58,13 +62,13 @@ class NativeApiClient(models.ApiClient):
         return VersionedCube(
             model_id = remote['id'],
             name = remote['name'],
-            created_at = datetime.datetime.strptime(remote['created_at'].split('Z')[0], self._DATETIME_FORMAT),
+            created_at = datetime.datetime.strptime(remote['created_at'], self._DATETIME_FORMAT),
             description = remote['description'],
             client = self,
         )
 
     def _versioned_cubes(self, offset: int, limit: int) -> t.List[t.Any]:
-        return self._make_request('versioned-cubes', offset=offset, limit=limit)
+        return self._make_request('versioned-cubes', offset = offset, limit = limit)
 
     def versioned_cubes(self, offset: int = 0, limit: int = 10) -> PaginatedResponse[VersionedCube]:
         return PaginatedResponse(
@@ -72,6 +76,67 @@ class NativeApiClient(models.ApiClient):
             self._serialize_versioned_cube,
             offset,
             limit,
+        )
+
+    def _serialize_patch(self, remote: t.Any) -> PatchModel:
+        return PatchModel(
+            model_id = remote['id'],
+            name = remote['name'],
+            created_at = datetime.datetime.strptime(remote['created_at'], self._DATETIME_FORMAT),
+            description = remote['description'],
+            client = self,
+        )
+
+    def _patches(
+        self,
+        versioned_cube_id: t.Union[int, str],
+        offset: int = 0,
+        limit: int = 10,
+    ) -> t.List[t.Any]:
+        return self._make_request(f'versioned-cubes/{versioned_cube_id}/patches', offset = offset, limit = limit)
+
+    def patches(
+        self,
+        versioned_cube: t.Union[VersionedCube, int, str],
+        offset: int = 0,
+        limit: int = 10,
+    ) -> PaginatedResponse[PatchModel]:
+        versioned_cube_id = (
+            versioned_cube.id
+            if isinstance(versioned_cube, VersionedCube) else
+            versioned_cube
+        )
+        return PaginatedResponse(
+            lambda _offset, _limit: self._patches(versioned_cube_id, _offset, _limit),
+            self._serialize_patch,
+            offset,
+            limit,
+        )
+
+    def preview_patch(self, patch: t.Union[PatchModel, int, str]) -> MetaCube:
+        result = self._make_request(
+            'patches/{}/preview'.format(
+                patch.id
+                if isinstance(patch, PatchModel) else
+                patch
+            )
+        )
+        return MetaCube(
+            cube = RawStrategy(self._db).deserialize(Cube, result['cube']),
+            nodes = RawStrategy(self._db).deserialize(NodeCollection, result['nodes']['constrained_nodes']),
+            groups = RawStrategy(self._db).deserialize(GroupMap, result['group_map']),
+        )
+
+    def verbose_patch(self, patch: t.Union[PatchModel, int, str]) -> VerboseCubePatch:
+        return RawStrategy(self._db).deserialize(
+            VerboseCubePatch,
+            self._make_request(
+                'patches/{}/verbose'.format(
+                    patch.id
+                    if isinstance(patch, PatchModel) else
+                    patch
+                )
+            ),
         )
 
     # def release_delta(self, from_release_id: int, to_release_id):
