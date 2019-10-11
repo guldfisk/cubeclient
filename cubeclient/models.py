@@ -16,11 +16,19 @@ R = t.TypeVar('R', bound = 'RemoteModel')
 class ApiClient(ABC):
 
     @abstractmethod
-    def release(self, release_id: int) -> CubeRelease:
+    def release(self, release: t.Union[CubeRelease, str, int]) -> CubeRelease:
         pass
 
     @abstractmethod
     def versioned_cubes(self, offset: int = 0, limit: int = 10) -> PaginatedResponse[VersionedCube]:
+        pass
+
+    @abstractmethod
+    def versioned_cube(self, versioned_cube_id: t.Union[str, int]) -> VersionedCube:
+        pass
+
+    @abstractmethod
+    def patch(self, patch_id: t.Union[str, int]) -> PatchModel:
         pass
 
     @abstractmethod
@@ -39,6 +47,10 @@ class ApiClient(ABC):
     @abstractmethod
     def verbose_patch(self, patch: t.Union[PatchModel, int, str]) -> VerboseCubePatch:
         pass
+
+    # @abstractmethod
+    # def patch_report(self, patch: t.Union[PatchModel, int, str]) -> UpdateReport:
+    #     pass
 
 
 # class LazyField(object):
@@ -151,12 +163,14 @@ class VersionedCube(RemoteModel):
         name: str,
         created_at: datetime.datetime,
         description: str,
+        releases: t.List[CubeRelease],
         client: ApiClient,
     ):
         super().__init__(model_id, client)
         self._name = name
         self._created_at = created_at
         self._description = description
+        self._releases = releases
 
         self._patches: t.Optional[PaginatedResponse[PatchModel]] = None
 
@@ -173,13 +187,17 @@ class VersionedCube(RemoteModel):
         return self._description
 
     @property
+    def releases(self) -> t.Sequence[CubeRelease]:
+        return self._releases
+
+    @property
     def patches(self) -> PaginatedResponse[PatchModel]:
         if self._patches is None:
             self._patches = self._api_client.patches(self)
         return self._patches
 
 
-class CubeReleaseMeta(RemoteModel):
+class CubeRelease(RemoteModel):
 
     def __init__(
         self,
@@ -187,12 +205,14 @@ class CubeReleaseMeta(RemoteModel):
         created_at: datetime.datetime,
         name: str,
         intended_size: int,
+        cube: t.Optional[Cube],
         client: ApiClient,
     ):
         super().__init__(model_id, client)
         self._created_at = created_at
         self._name = name
         self._intended_size = intended_size
+        self._cube = cube
 
     @property
     def created_at(self) -> datetime.datetime:
@@ -206,23 +226,10 @@ class CubeReleaseMeta(RemoteModel):
     def intended_size(self) -> int:
         return self._intended_size
 
-
-class CubeRelease(CubeReleaseMeta):
-
-    def __init__(
-        self,
-        model_id: t.Union[str, int],
-        created_at: datetime.datetime,
-        name: str,
-        intended_size: int,
-        cube: Cube,
-        client: ApiClient,
-    ):
-        super().__init__(model_id, created_at, name, intended_size, client)
-        self._cube = cube
-
     @property
     def cube(self) -> Cube:
+        if self._cube is None:
+            self._cube = self._api_client.release(self).cube
         return self._cube
 
 

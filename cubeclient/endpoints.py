@@ -17,6 +17,7 @@ from magiccube.laps.purples.purple import Purple
 from magiccube.laps.tickets.ticket import Ticket
 from magiccube.laps.traps.trap import Trap
 from magiccube.update.cubeupdate import VerboseCubePatch
+from magiccube.update.report import UpdateReport
 from mtgorp.db.database import CardDatabase
 from mtgorp.models.persistent.printing import Printing
 from mtgorp.models.serilization.strategies.jsonid import JsonId
@@ -44,36 +45,62 @@ class NativeApiClient(models.ApiClient):
             params = kwargs,
         ).json()
 
-    def release(self, release_id: int) -> models.CubeRelease:
-        result = self._make_request(f'cube-releases/{release_id}')
+    def _deserialize_cube_release(self, remote: t.Any) -> models.CubeRelease:
         return models.CubeRelease(
-            model_id = result['id'],
-            created_at = datetime.datetime.strptime(result['created_at'], self._DATETIME_FORMAT),
-            name = result['name'],
-            intended_size = result['intended_size'],
-            cube = RawStrategy(self._db).deserialize(
-                Cube,
-                result['cube']
+            model_id = remote['id'],
+            created_at = datetime.datetime.strptime(remote['created_at'], self._DATETIME_FORMAT),
+            name = remote['name'],
+            intended_size = remote['intended_size'],
+            cube = (
+                RawStrategy(self._db).deserialize(
+                    Cube,
+                    remote['cube']
+                )
+                if 'cube' in remote else
+                None
             ),
             client = self,
         )
 
-    def _serialize_versioned_cube(self, remote) -> VersionedCube:
+    def release(self, release: t.Union[models.CubeRelease, str, int]) -> models.CubeRelease:
+        return self._deserialize_cube_release(
+            self._make_request(
+                'cube-releases/{}'.format(
+                    release.id
+                    if isinstance(release, models.CubeRelease) else
+                    release
+                )
+            )
+        )
+
+    def _deserialize_versioned_cube(self, remote) -> VersionedCube:
         return VersionedCube(
             model_id = remote['id'],
             name = remote['name'],
             created_at = datetime.datetime.strptime(remote['created_at'], self._DATETIME_FORMAT),
             description = remote['description'],
+            releases = [
+                self._deserialize_cube_release(release)
+                for release in
+                remote['releases']
+            ],
             client = self,
         )
 
     def _versioned_cubes(self, offset: int, limit: int) -> t.List[t.Any]:
         return self._make_request('versioned-cubes', offset = offset, limit = limit)
 
+    def versioned_cube(self, versioned_cube_id: t.Union[str, int]) -> VersionedCube:
+        return self._deserialize_versioned_cube(
+            self._make_request(
+                f'versioned-cubes/{versioned_cube_id}'
+            )
+        )
+
     def versioned_cubes(self, offset: int = 0, limit: int = 10) -> PaginatedResponse[VersionedCube]:
         return PaginatedResponse(
             self._versioned_cubes,
-            self._serialize_versioned_cube,
+            self._deserialize_versioned_cube,
             offset,
             limit,
         )
@@ -94,6 +121,13 @@ class NativeApiClient(models.ApiClient):
         limit: int = 10,
     ) -> t.List[t.Any]:
         return self._make_request(f'versioned-cubes/{versioned_cube_id}/patches', offset = offset, limit = limit)
+
+    def patch(self, patch_id: t.Union[str, int]) -> PatchModel:
+        return self._serialize_patch(
+            self._make_request(
+                f'patches/{patch_id}'
+            )
+        )
 
     def patches(
         self,
@@ -138,6 +172,9 @@ class NativeApiClient(models.ApiClient):
                 )
             ),
         )
+
+    # def patch_report(self, patch: t.Union[PatchModel, int, str]) -> UpdateReport:
+    #     pass
 
     # def release_delta(self, from_release_id: int, to_release_id):
     #     result = r.get(
