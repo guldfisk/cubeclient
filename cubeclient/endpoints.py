@@ -37,7 +37,7 @@ class NativeApiClient(models.ApiClient):
         self._strategy = RawStrategy(db)
 
     def _make_request(self, endpoint: str, **kwargs) -> t.Any:
-        kwargs.update(native = True)
+        kwargs.setdefault('native', True)
         url = f'http://{self._domain}/api/{endpoint}/'
         print('request to', url, kwargs)
         return r.get(
