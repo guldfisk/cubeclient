@@ -10,7 +10,8 @@ import datetime
 import requests as r
 
 from cubeclient import models
-from cubeclient.models import PaginatedResponse, VersionedCube, PatchModel
+from cubeclient.models import PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility
+from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
 from magiccube.collections.nodecollection import NodeCollection, GroupMap
 from magiccube.laps.purples.purple import Purple
@@ -171,6 +172,45 @@ class NativeApiClient(models.ApiClient):
                     patch
                 )
             ),
+        )
+
+    def _deserialize_distribution_possibility(self, remote: t.Any) -> DistributionPossibility:
+        return DistributionPossibility(
+            model_id = remote['id'],
+            created_at = remote['created_at'],
+            pdf_url = remote['pdf_url'],
+            fitness = remote['fitness'],
+            trap_collection = RawStrategy(self._db).deserialize(TrapCollection, remote['trap_collection']),
+            client = self,
+        )
+
+    def _distribution_possibilities(
+        self,
+        patch: t.Union[PatchModel, int, str],
+        offset: int,
+        limit: int,
+    ):
+        return self._make_request(
+            'patches/{}/distribution-possibilities'.format(
+                patch.id
+                if isinstance(patch, PatchModel) else
+                patch
+            ),
+            offset = offset,
+            limit = limit,
+        )
+
+    def distribution_possibilities(
+        self,
+        patch: t.Union[PatchModel, int, str],
+        offset: int = 0,
+        limit: int = 10,
+    ) -> PaginatedResponse[DistributionPossibility]:
+        return PaginatedResponse(
+            lambda _offset, _limit: self._distribution_possibilities(patch, _offset, _limit),
+            self._deserialize_distribution_possibility,
+            offset,
+            limit,
         )
 
     # def patch_report(self, patch: t.Union[PatchModel, int, str]) -> UpdateReport:

@@ -12,13 +12,10 @@ def test():
     client = NativeApiClient('localhost:7000', db)
 
 
-    for release in client.versioned_cube(1).releases:
-        print(release.cube)
+    patch = client.patch(26)
 
-    # for versioned_cube in client.versioned_cubes():
-    #     for patch in versioned_cube.patches:
-    #         print(patch.verbose)
-
+    for possibility in patch.distribution_possibilities:
+        print(possibility.fitness)
 
 
 if __name__ == '__main__':

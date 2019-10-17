@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 import datetime
 
 from magiccube.collections.cube import Cube
+from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
 from magiccube.update.cubeupdate import VerboseCubePatch
 
@@ -48,14 +49,19 @@ class ApiClient(ABC):
     def verbose_patch(self, patch: t.Union[PatchModel, int, str]) -> VerboseCubePatch:
         pass
 
+    @abstractmethod
+    def distribution_possibilities(
+        self,
+        patch: t.Union[PatchModel, int, str],
+        offset: int = 0,
+        limit: int = 10,
+    ) -> PaginatedResponse[DistributionPossibility]:
+        pass
+
     # @abstractmethod
     # def patch_report(self, patch: t.Union[PatchModel, int, str]) -> UpdateReport:
     #     pass
 
-
-# class LazyField(object):
-#
-#
 
 class PaginatedResponse(t.Sequence[R]):
 
@@ -250,6 +256,7 @@ class PatchModel(RemoteModel):
 
         self._preview: t.Optional[MetaCube] = None
         self._verbose: t.Optional[VerboseCubePatch] = None
+        self._distribution_possibilities: t.Optional[PaginatedResponse[DistributionPossibility]] = None
 
     @property
     def created_at(self) -> datetime.datetime:
@@ -274,3 +281,43 @@ class PatchModel(RemoteModel):
         if self._verbose is None:
             self._verbose = self._api_client.verbose_patch(self)
         return self._verbose
+
+    @property
+    def distribution_possibilities(self) -> PaginatedResponse[DistributionPossibility]:
+        if self._distribution_possibilities is None:
+            self._distribution_possibilities = self._api_client.distribution_possibilities(self)
+        return self._distribution_possibilities
+
+
+class DistributionPossibility(RemoteModel):
+
+    def __init__(
+        self,
+        model_id: t.Union[str, int],
+        created_at: datetime.datetime,
+        pdf_url: t.Optional[str],
+        fitness: float,
+        trap_collection: TrapCollection,
+        client: ApiClient,
+    ):
+        super().__init__(model_id, client)
+        self._created_at = created_at
+        self._pdf_url = pdf_url
+        self._fitness = fitness
+        self._trap_collection = trap_collection
+
+    @property
+    def created_at(self) -> datetime.datetime:
+        return self._created_at
+
+    @property
+    def pdf_url(self) -> t.Optional[str]:
+        return self._pdf_url
+
+    @property
+    def fitness(self) -> float:
+        return self._fitness
+
+    @property
+    def trap_collection(self) -> TrapCollection:
+        return self._trap_collection
