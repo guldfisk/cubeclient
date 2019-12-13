@@ -100,7 +100,7 @@ class PaginatedResponse(t.Sequence[R]):
             except IndexError:
                 break
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> R:
         if self._items[index] is None:
             self._fetch_page(index)
         return self._items[index]
