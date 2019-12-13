@@ -57,6 +57,10 @@ class ApiClient(ABC):
         limit: int = 10,
     ) -> PaginatedResponse[DistributionPossibility]:
         pass
+    
+    @abstractmethod
+    def get_sealed_pool(self, key: str) -> SealedPool:
+        pass
 
     # @abstractmethod
     # def patch_report(self, patch: t.Union[PatchModel, int, str]) -> UpdateReport:
@@ -321,3 +325,19 @@ class DistributionPossibility(RemoteModel):
     @property
     def trap_collection(self) -> TrapCollection:
         return self._trap_collection
+
+
+class SealedPool(RemoteModel):
+    
+    def __init__(
+        self,
+        key: str,
+        pool: Cube,
+        client: ApiClient,
+    ):
+        super().__init__(key, client)
+        self._pool = pool
+
+    @property
+    def pool(self) -> Cube:
+        return self._pool

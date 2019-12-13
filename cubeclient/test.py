@@ -12,10 +12,10 @@ def test():
     client = NativeApiClient('localhost:7000', db)
 
 
-    patch = client.patch(26)
+    sealed_pool = client.get_sealed_pool('yikes')
 
-    for possibility in patch.distribution_possibilities:
-        print(possibility.fitness)
+    print(sealed_pool)
+    print(sealed_pool.pool)
 
 
 if __name__ == '__main__':

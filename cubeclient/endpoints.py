@@ -1,31 +1,19 @@
 from __future__ import annotations
 
-import typing as t
-
-from abc import ABC
-import itertools
-import json
 import datetime
+import typing as t
 
 import requests as r
 
 from cubeclient import models
-from cubeclient.models import PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility
+from cubeclient.models import PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility, SealedPool
+from magiccube.collections.cube import Cube
 from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
 from magiccube.collections.nodecollection import NodeCollection, GroupMap
-from magiccube.laps.purples.purple import Purple
-from magiccube.laps.tickets.ticket import Ticket
-from magiccube.laps.traps.trap import Trap
 from magiccube.update.cubeupdate import VerboseCubePatch
-from magiccube.update.report import UpdateReport
 from mtgorp.db.database import CardDatabase
-from mtgorp.models.persistent.printing import Printing
-from mtgorp.models.serilization.strategies.jsonid import JsonId
 from mtgorp.models.serilization.strategies.raw import RawStrategy
-
-from magiccube.collections.cube import Cube
-from yeetlong.multiset import FrozenMultiset
 
 
 class NativeApiClient(models.ApiClient):
@@ -211,6 +199,17 @@ class NativeApiClient(models.ApiClient):
             self._deserialize_distribution_possibility,
             offset,
             limit,
+        )
+
+    def get_sealed_pool(self, key: str) -> SealedPool:
+        response = self._make_request(
+            'sealed/{}'.format(key)
+        )
+        
+        return SealedPool(
+            key = response['key'],
+            pool = RawStrategy(self._db).deserialize(Cube, response['pool']),
+            client = self,
         )
 
     # def patch_report(self, patch: t.Union[PatchModel, int, str]) -> UpdateReport:
