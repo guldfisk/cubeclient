@@ -6,13 +6,14 @@ import typing as t
 import requests as r
 
 from cubeclient import models
-from cubeclient.models import PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility, SealedPool
+from cubeclient.models import PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility, SealedPool, P
 from magiccube.collections.cube import Cube
 from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
 from magiccube.collections.nodecollection import NodeCollection, GroupMap
 from magiccube.update.cubeupdate import VerboseCubePatch
 from mtgorp.db.database import CardDatabase
+from mtgorp.models.persistent.printing import Printing
 from mtgorp.models.serilization.strategies.raw import RawStrategy
 
 
@@ -28,7 +29,6 @@ class NativeApiClient(models.ApiClient):
     def _make_request(self, endpoint: str, **kwargs) -> t.Any:
         kwargs.setdefault('native', True)
         url = f'http://{self._domain}/api/{endpoint}/'
-        print('request to', url, kwargs)
         return r.get(
             url,
             params = kwargs,
@@ -177,7 +177,7 @@ class NativeApiClient(models.ApiClient):
         patch: t.Union[PatchModel, int, str],
         offset: int,
         limit: int,
-    ):
+    ) -> t.Any:
         return self._make_request(
             'patches/{}/distribution-possibilities'.format(
                 patch.id
@@ -205,11 +205,57 @@ class NativeApiClient(models.ApiClient):
         response = self._make_request(
             'sealed/{}'.format(key)
         )
-        
         return SealedPool(
             key = response['key'],
             pool = RawStrategy(self._db).deserialize(Cube, response['pool']),
             client = self,
+        )
+
+    def _search(
+        self,
+        query: str,
+        offset: int = 0,
+        limit = 10,
+        order_by: str = 'name',
+        descending: bool = False,
+        search_target: str = 'printings',
+    ) -> t.Any:
+        return self._make_request(
+            'search',
+            query = query,
+            offset = offset,
+            limit = limit,
+            order_by = order_by,
+            descending = str(descending),
+            search_target = search_target,
+        )
+
+    def search(
+        self,
+        query: str,
+        offset: int = 0,
+        limit = 10,
+        order_by: str = 'name',
+        descending: bool = False,
+        search_target: t.Type[P] = Printing,
+    ) -> PaginatedResponse[P]:
+
+        return PaginatedResponse(
+            lambda _offset, _limit: self._search(
+                query,
+                _offset,
+                _limit,
+                order_by,
+                descending,
+                'printings' if search_target == Printing else 'cardboards',
+            ),
+            (
+                (lambda p: self._db.printings[p])
+                if search_target == Printing else
+                (lambda c: self._db.cardboards[c])
+            ),
+            offset,
+            limit,
         )
 
     # def patch_report(self, patch: t.Union[PatchModel, int, str]) -> UpdateReport:

@@ -9,9 +9,12 @@ from magiccube.collections.cube import Cube
 from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
 from magiccube.update.cubeupdate import VerboseCubePatch
+from mtgorp.models.persistent.cardboard import Cardboard
+from mtgorp.models.persistent.printing import Printing
 
 
-R = t.TypeVar('R', bound = 'RemoteModel')
+R = t.TypeVar('R')
+P = t.TypeVar('P', bound = t.Union[Printing, Cardboard])
 
 
 class ApiClient(ABC):
@@ -60,6 +63,18 @@ class ApiClient(ABC):
     
     @abstractmethod
     def get_sealed_pool(self, key: str) -> SealedPool:
+        pass
+    
+    @abstractmethod
+    def search(
+        self,
+        query: str,
+        offset: int = 0,
+        limit = 10,
+        order_by: str = 'name',
+        descending: bool = False,
+        search_target: t.Type[P] = Printing,
+    ) -> PaginatedResponse[P]:
         pass
 
     # @abstractmethod
