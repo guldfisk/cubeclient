@@ -6,7 +6,9 @@ import typing as t
 import requests as r
 
 from cubeclient import models
-from cubeclient.models import PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility, SealedPool, P
+from cubeclient.models import (
+    PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility, SealedPool, P, SealedSession
+)
 from magiccube.collections.cube import Cube
 from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
@@ -20,19 +22,54 @@ from mtgorp.models.serilization.strategies.raw import RawStrategy
 class NativeApiClient(models.ApiClient):
     _DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
 
-    def __init__(self, domain: str, db: CardDatabase):
+    def __init__(self, domain: str, db: CardDatabase, *, token: t.Optional[str] = None):
+        super().__init__(token = token)
         self._domain = domain
         self._db = db
 
         self._strategy = RawStrategy(db)
 
-    def _make_request(self, endpoint: str, **kwargs) -> t.Any:
+    def _make_request(
+        self,
+        endpoint: str,
+        method: str = 'GET',
+        data: t.Optional[t.Mapping[str, t.Any]] = None,
+        **kwargs,
+    ) -> t.Any:
+        if data is None:
+            data = {}
+
         kwargs.setdefault('native', True)
+
+        headers = {}
+        if self._token is not None:
+            headers.setdefault('Authorization', 'Token ' + self._token)
+
         url = f'http://{self._domain}/api/{endpoint}/'
-        return r.get(
+
+        print('request', url)
+
+        response = r.request(
+            method,
             url,
+            data = data,
             params = kwargs,
-        ).json()
+            headers = headers,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def login(self, username: str, password: str) -> str:
+        token = self._make_request(
+            'auth/login',
+            method = 'POST',
+            data = {
+                'username': username,
+                'password': password,
+            }
+        )['token']
+        self._token = token
+        return token
 
     def _deserialize_cube_release(self, remote: t.Any) -> models.CubeRelease:
         return models.CubeRelease(
@@ -201,16 +238,6 @@ class NativeApiClient(models.ApiClient):
             limit,
         )
 
-    def get_sealed_pool(self, key: str) -> SealedPool:
-        response = self._make_request(
-            'sealed/{}'.format(key)
-        )
-        return SealedPool(
-            key = response['key'],
-            pool = RawStrategy(self._db).deserialize(Cube, response['pool']),
-            client = self,
-        )
-
     def _search(
         self,
         query: str,
@@ -256,6 +283,62 @@ class NativeApiClient(models.ApiClient):
             ),
             offset,
             limit,
+        )
+
+    def _deserialize_sealed_pool(self, remote: t.Any) -> SealedPool:
+        return SealedPool(
+            pool_id = remote['id'],
+            client = self,
+            session = self._deserialize_sealed_session(remote['session']) if 'session' in remote else None,
+            pool = RawStrategy(self._db).deserialize(Cube, remote['pool']) if 'pool' in remote else None,
+        )
+
+    def _deserialize_sealed_session(self, remote: t.Any) -> SealedSession:
+        return SealedSession(
+            model_id = remote['id'],
+            name = remote['name'],
+            release = remote['release'],
+            state = SealedSession.SealedSessionState[remote['state']],
+            pool_size = remote['pool_size'],
+            game_format = remote['format'],
+            created_at = datetime.datetime.strptime(remote['created_at'], self._DATETIME_FORMAT),
+            client = self,
+            pools = [
+                self._deserialize_sealed_pool(pool)
+                for pool in
+                remote['pools']
+            ] if 'pools' in remote else None
+        )
+
+    def sealed_session(self, session_id: t.Union[str, int]) -> SealedSession:
+        return self._deserialize_sealed_session(
+            self._make_request(
+                f'sealed/sessions/{session_id}'
+            )
+        )
+
+    def _sealed_sessions(
+        self,
+        offset: int,
+        limit: int,
+    ) -> t.Any:
+        return self._make_request(
+            f'sealed/sessions',
+            offset = offset,
+            limit = limit,
+        )
+
+    def sealed_sessions(self, offset: int = 0, limit: int = 10) -> PaginatedResponse[SealedSession]:
+        return PaginatedResponse(
+            lambda _offset, _limit: self._sealed_sessions(_offset, _limit),
+            self._deserialize_sealed_session,
+            offset,
+            limit,
+        )
+
+    def sealed_pool(self, pool_id: t.Union[str, int]) -> SealedPool:
+        return self._deserialize_sealed_pool(
+            self._make_request(f'sealed/pools/{pool_id}')
         )
 
     # def patch_report(self, patch: t.Union[PatchModel, int, str]) -> UpdateReport:

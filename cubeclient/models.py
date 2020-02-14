@@ -4,6 +4,7 @@ import typing as t
 
 from abc import ABC, abstractmethod
 import datetime
+from enum import Enum
 
 from magiccube.collections.cube import Cube
 from magiccube.collections.laps import TrapCollection
@@ -18,6 +19,21 @@ P = t.TypeVar('P', bound = t.Union[Printing, Cardboard])
 
 
 class ApiClient(ABC):
+
+    def __init__(self, *, token: t.Optional[str] = None):
+        self._token = token
+
+    @property
+    def token(self) -> str:
+        return self._token
+
+    @token.setter
+    def token(self, value: str) -> None:
+        self._token = value
+
+    @abstractmethod
+    def login(self, username: str, password: str) -> str:
+        pass
 
     @abstractmethod
     def release(self, release: t.Union[CubeRelease, str, int]) -> CubeRelease:
@@ -62,10 +78,6 @@ class ApiClient(ABC):
         pass
     
     @abstractmethod
-    def get_sealed_pool(self, key: str) -> SealedPool:
-        pass
-    
-    @abstractmethod
     def search(
         self,
         query: str,
@@ -75,6 +87,18 @@ class ApiClient(ABC):
         descending: bool = False,
         search_target: t.Type[P] = Printing,
     ) -> PaginatedResponse[P]:
+        pass
+
+    @abstractmethod
+    def sealed_session(self, session_id: t.Union[str, int]) -> SealedSession:
+        pass
+
+    @abstractmethod
+    def sealed_sessions(self, offset: int = 0, limit: int = 10) -> PaginatedResponse[SealedSession]:
+        pass
+
+    @abstractmethod
+    def sealed_pool(self, pool_id: t.Union[str, int]) -> SealedPool:
         pass
 
     # @abstractmethod
@@ -342,17 +366,90 @@ class DistributionPossibility(RemoteModel):
         return self._trap_collection
 
 
+class SealedSession(RemoteModel):
+    class SealedSessionState(Enum):
+        DECK_BUILDING = 0
+        PLAYING = 1
+        FINISHED = 2
+
+    def __init__(
+        self,
+        model_id: t.Union[str, int],
+        name: str,
+        release: t.Any,
+        state: SealedSessionState,
+        pool_size: int,
+        game_format: str,
+        created_at: datetime.datetime,
+        client: ApiClient,
+        pools: t.Optional[t.List[SealedPool]] = None,
+    ):
+        super().__init__(model_id, client)
+        self._name = name
+        self._release = release
+        self._state = state
+        self._pool_size = pool_size
+        self._game_format = game_format
+        self._created_at = created_at
+        self._pools = pools
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def release(self):
+        return self._release
+
+    @property
+    def state(self) -> SealedSessionState:
+        return self._state
+
+    @property
+    def pool_size(self) -> int:
+        return self._pool_size
+
+    @property
+    def game_format(self) -> str:
+        return self._game_format
+
+    @property
+    def created_at(self) -> datetime.datetime:
+        return self._created_at
+
+    @property
+    def pools(self) -> t.List[SealedPool]:
+        if self._pools is None:
+            self._pools = self._api_client.sealed_session(self._id)._pools
+        return self._pools
+
+
 class SealedPool(RemoteModel):
     
     def __init__(
         self,
-        key: str,
-        pool: Cube,
+        pool_id: t.Union[str, int],
         client: ApiClient,
+        session: t.Optional[SealedSession] = None,
+        pool: t.Optional[Cube] = None,
     ):
-        super().__init__(key, client)
+        super().__init__(pool_id, client)
         self._pool = pool
+        self._session = session
+
+    def _fetch(self) -> None:
+        pool = self._api_client.sealed_pool(self._id)
+        self._pool = pool._pool
+        self._session = pool._session
 
     @property
     def pool(self) -> Cube:
+        if self._pool is None:
+            self._fetch()
         return self._pool
+
+    @property
+    def session(self) -> SealedSession:
+        if self._session is None:
+            self._fetch()
+        return self._session
