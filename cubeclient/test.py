@@ -16,12 +16,13 @@ def test():
 
     client.login('testman', '1234')
 
-    for session in client.sealed_sessions(limit = 2):
-        for pool in session.pools:
-            try:
-                print(pool.pool)
-            except HTTPError as e:
-                print(e)
+    for session in client.sealed_sessions(limit = 2, filters = {'state_filter': 'DECK_BUILDING'}):
+        print(session.players)
+        # for pool in session.pools:
+        #     try:
+        #         print(pool.pool)
+        #     except HTTPError as e:
+        #         print(e)
 
     # print('l go')
     # for cardboard in (

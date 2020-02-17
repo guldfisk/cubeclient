@@ -20,8 +20,14 @@ P = t.TypeVar('P', bound = t.Union[Printing, Cardboard])
 
 class ApiClient(ABC):
 
-    def __init__(self, *, token: t.Optional[str] = None):
+    def __init__(self, host: str, *, token: t.Optional[str] = None):
+        self._host = host
         self._token = token
+        self._user = None
+
+    @property
+    def host(self) -> str:
+        return self._host
 
     @property
     def token(self) -> str:
@@ -30,6 +36,10 @@ class ApiClient(ABC):
     @token.setter
     def token(self, value: str) -> None:
         self._token = value
+
+    @property
+    def user(self) -> t.Optional[User]:
+        return self._user
 
     @abstractmethod
     def login(self, username: str, password: str) -> str:
@@ -94,7 +104,15 @@ class ApiClient(ABC):
         pass
 
     @abstractmethod
-    def sealed_sessions(self, offset: int = 0, limit: int = 10) -> PaginatedResponse[SealedSession]:
+    def sealed_sessions(
+        self,
+        offset: int = 0,
+        limit: int = 10,
+        *,
+        filters: t.Optional[t.Mapping[str, t.Any]] = None,
+        sort_key: str = 'created_at',
+        ascending: bool = False,
+    ) -> PaginatedResponse[SealedSession]:
         pass
 
     @abstractmethod
@@ -202,6 +220,17 @@ class RemoteModel(ABC):
             self.__class__.__name__,
             self._id,
         )
+
+
+class User(RemoteModel):
+
+    def __init__(self, model_id: t.Union[str, int], username: str, client: ApiClient):
+        super().__init__(model_id, client)
+        self._username = username
+
+    @property
+    def username(self) -> str:
+        return self._username
 
 
 class VersionedCube(RemoteModel):
@@ -377,6 +406,7 @@ class SealedSession(RemoteModel):
         model_id: t.Union[str, int],
         name: str,
         release: t.Any,
+        players: t.AbstractSet[User],
         state: SealedSessionState,
         pool_size: int,
         game_format: str,
@@ -387,6 +417,7 @@ class SealedSession(RemoteModel):
         super().__init__(model_id, client)
         self._name = name
         self._release = release
+        self._players = players
         self._state = state
         self._pool_size = pool_size
         self._game_format = game_format
@@ -400,6 +431,10 @@ class SealedSession(RemoteModel):
     @property
     def release(self):
         return self._release
+
+    @property
+    def players(self) -> t.AbstractSet[User]:
+        return self._players
 
     @property
     def state(self) -> SealedSessionState:

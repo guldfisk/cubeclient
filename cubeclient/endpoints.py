@@ -22,9 +22,8 @@ from mtgorp.models.serilization.strategies.raw import RawStrategy
 class NativeApiClient(models.ApiClient):
     _DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
 
-    def __init__(self, domain: str, db: CardDatabase, *, token: t.Optional[str] = None):
-        super().__init__(token = token)
-        self._domain = domain
+    def __init__(self, host: str, db: CardDatabase, *, token: t.Optional[str] = None):
+        super().__init__(host, token = token)
         self._db = db
 
         self._strategy = RawStrategy(db)
@@ -45,9 +44,9 @@ class NativeApiClient(models.ApiClient):
         if self._token is not None:
             headers.setdefault('Authorization', 'Token ' + self._token)
 
-        url = f'http://{self._domain}/api/{endpoint}/'
+        url = f'http://{self._host}/api/{endpoint}/'
 
-        print('request', url)
+        print('request', url, kwargs)
 
         response = r.request(
             method,
@@ -59,17 +58,25 @@ class NativeApiClient(models.ApiClient):
         response.raise_for_status()
         return response.json()
 
+    def _deserialize_user(self, remote: t.Any) -> models.User:
+        return models.User(
+            model_id = remote['id'],
+            username = remote['username'],
+            client = self,
+        )
+
     def login(self, username: str, password: str) -> str:
-        token = self._make_request(
+        response = self._make_request(
             'auth/login',
             method = 'POST',
             data = {
                 'username': username,
                 'password': password,
             }
-        )['token']
-        self._token = token
-        return token
+        )
+        self._user = self._deserialize_user(response['user'])
+        self._token = response['token']
+        return self._token
 
     def _deserialize_cube_release(self, remote: t.Any) -> models.CubeRelease:
         return models.CubeRelease(
@@ -298,6 +305,7 @@ class NativeApiClient(models.ApiClient):
             model_id = remote['id'],
             name = remote['name'],
             release = remote['release'],
+            players = {self._deserialize_user(player) for player in remote['players']},
             state = SealedSession.SealedSessionState[remote['state']],
             pool_size = remote['pool_size'],
             game_format = remote['format'],
@@ -319,18 +327,39 @@ class NativeApiClient(models.ApiClient):
 
     def _sealed_sessions(
         self,
-        offset: int,
-        limit: int,
+        offset: int = 0,
+        limit: int = 10,
+        *,
+        filters: t.Mapping[str, t.Any],
+        sort_key: str = 'created_at',
+        ascending: bool = False,
     ) -> t.Any:
         return self._make_request(
             f'sealed/sessions',
             offset = offset,
             limit = limit,
+            sort_key = sort_key,
+            ascending = ascending,
+            **filters,
         )
 
-    def sealed_sessions(self, offset: int = 0, limit: int = 10) -> PaginatedResponse[SealedSession]:
+    def sealed_sessions(
+        self,
+        offset: int = 0,
+        limit: int = 10,
+        *,
+        filters: t.Optional[t.Mapping[str, t.Any]] = None,
+        sort_key: str = 'created_at',
+        ascending: bool = False,
+    ) -> PaginatedResponse[SealedSession]:
         return PaginatedResponse(
-            lambda _offset, _limit: self._sealed_sessions(_offset, _limit),
+            lambda _offset, _limit: self._sealed_sessions(
+                _offset,
+                _limit,
+                filters = {} if filters is None else filters,
+                sort_key = sort_key,
+                ascending = ascending,
+            ),
             self._deserialize_sealed_session,
             offset,
             limit,
