@@ -7,15 +7,17 @@ import requests as r
 
 from cubeclient import models
 from cubeclient.models import (
-    PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility, SealedPool, P, SealedSession
-)
+    PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility, SealedPool, P, SealedSession,
+    LimitedDeck)
 from magiccube.collections.cube import Cube
 from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
 from magiccube.collections.nodecollection import NodeCollection, GroupMap
 from magiccube.update.cubeupdate import VerboseCubePatch
 from mtgorp.db.database import CardDatabase
+from mtgorp.models.collections.deck import Deck
 from mtgorp.models.persistent.printing import Printing
+from mtgorp.models.serilization.strategies.jsonid import JsonId
 from mtgorp.models.serilization.strategies.raw import RawStrategy
 
 
@@ -292,10 +294,25 @@ class NativeApiClient(models.ApiClient):
             limit,
         )
 
+    def _deserialize_limited_deck(self, remote: t.Any) -> LimitedDeck:
+        return LimitedDeck(
+            deck_id = remote['id'],
+            name = remote['name'],
+            created_at = datetime.datetime.strptime(remote['created_at'], self._DATETIME_FORMAT),
+            deck = RawStrategy(self._db).deserialize(Deck, remote['deck']),
+            client = self,
+        )
+
     def _deserialize_sealed_pool(self, remote: t.Any) -> SealedPool:
         return SealedPool(
             pool_id = remote['id'],
+            user = self._deserialize_user(remote['user']),
             client = self,
+            decks = (
+                list(map(self._deserialize_limited_deck, remote['decks']))
+                if remote['decks'] and not isinstance(remote['decks'][0], int) else
+                None
+            ),
             session = self._deserialize_sealed_session(remote['session']) if 'session' in remote else None,
             pool = RawStrategy(self._db).deserialize(Cube, remote['pool']) if 'pool' in remote else None,
         )
@@ -368,6 +385,18 @@ class NativeApiClient(models.ApiClient):
     def sealed_pool(self, pool_id: t.Union[str, int]) -> SealedPool:
         return self._deserialize_sealed_pool(
             self._make_request(f'sealed/pools/{pool_id}')
+        )
+
+    def upload_sealed_deck(self, pool_id: t.Union[str, int], name: str, deck: Deck) -> LimitedDeck:
+        return self._deserialize_limited_deck(
+            self._make_request(
+                f'sealed/pools/{pool_id}',
+                method = 'POST',
+                data = {
+                    'deck': JsonId.serialize(deck),
+                    'name': name,
+                }
+            )
         )
 
     # def patch_report(self, patch: t.Union[PatchModel, int, str]) -> UpdateReport:

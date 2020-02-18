@@ -10,9 +10,9 @@ from magiccube.collections.cube import Cube
 from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
 from magiccube.update.cubeupdate import VerboseCubePatch
+from mtgorp.models.collections.deck import Deck
 from mtgorp.models.persistent.cardboard import Cardboard
 from mtgorp.models.persistent.printing import Printing
-
 
 R = t.TypeVar('R')
 P = t.TypeVar('P', bound = t.Union[Printing, Cardboard])
@@ -86,7 +86,7 @@ class ApiClient(ABC):
         limit: int = 10,
     ) -> PaginatedResponse[DistributionPossibility]:
         pass
-    
+
     @abstractmethod
     def search(
         self,
@@ -117,6 +117,10 @@ class ApiClient(ABC):
 
     @abstractmethod
     def sealed_pool(self, pool_id: t.Union[str, int]) -> SealedPool:
+        pass
+
+    @abstractmethod
+    def upload_sealed_deck(self, pool_id: t.Union[str, int], name: str, deck: Deck) -> LimitedDeck:
         pass
 
     # @abstractmethod
@@ -459,23 +463,66 @@ class SealedSession(RemoteModel):
         return self._pools
 
 
+class LimitedDeck(RemoteModel):
+
+    def __init__(
+        self,
+        deck_id: t.Union[str, int],
+        name: str,
+        created_at: datetime.datetime,
+        deck: Deck,
+        client: ApiClient,
+    ):
+        super().__init__(deck_id, client)
+        self._name = name
+        self._created_at = created_at
+        self._deck = deck
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def created_at(self) -> datetime.datetime:
+        return self._created_at
+
+    @property
+    def deck(self) -> Deck:
+        return self._deck
+
+
 class SealedPool(RemoteModel):
-    
+
     def __init__(
         self,
         pool_id: t.Union[str, int],
+        user: User,
         client: ApiClient,
+        decks: t.Optional[t.List[LimitedDeck]] = None,
         session: t.Optional[SealedSession] = None,
         pool: t.Optional[Cube] = None,
     ):
         super().__init__(pool_id, client)
+        self._user = user
+        self._decks = decks
         self._pool = pool
         self._session = session
 
     def _fetch(self) -> None:
         pool = self._api_client.sealed_pool(self._id)
+        self._decks = pool._decks if pool._decks else []
         self._pool = pool._pool
         self._session = pool._session
+
+    @property
+    def user(self) -> user:
+        return self._user
+
+    @property
+    def decks(self) -> t.List[LimitedDeck]:
+        if self._decks is None:
+            self._fetch()
+        return self._decks
 
     @property
     def pool(self) -> Cube:
