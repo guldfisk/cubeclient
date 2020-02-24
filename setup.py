@@ -21,7 +21,12 @@ setup(
     install_requires = [
         'yeetlong @ https://github.com/guldfisk/yeetlong/tarball/master#egg=yeetlong-1.0',
         'websocket',
-        'requests', 'cachetools', 'promise', 'PyQt5', 'frozendict', 'bidict', 'simplejson'
+        'requests',
+        'cachetools',
+        'promise',
+        'frozendict',
+        'bidict',
+        'simplejson', 'PyQt5'
     ],
 
 )
