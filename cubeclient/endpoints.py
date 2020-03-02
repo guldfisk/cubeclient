@@ -8,7 +8,7 @@ import requests as r
 from cubeclient import models
 from cubeclient.models import (
     PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility, SealedPool, P, SealedSession,
-    LimitedDeck)
+    LimitedDeck, User)
 from magiccube.collections.cube import Cube
 from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
@@ -60,13 +60,6 @@ class NativeApiClient(models.ApiClient):
         response.raise_for_status()
         return response.json()
 
-    def _deserialize_user(self, remote: t.Any) -> models.User:
-        return models.User(
-            model_id = remote['id'],
-            username = remote['username'],
-            client = self,
-        )
-
     def login(self, username: str, password: str) -> str:
         response = self._make_request(
             'auth/login',
@@ -76,7 +69,7 @@ class NativeApiClient(models.ApiClient):
                 'password': password,
             }
         )
-        self._user = self._deserialize_user(response['user'])
+        self._user = User.deserialize(response['user'], self)
         self._token = response['token']
         return self._token
 
@@ -306,7 +299,7 @@ class NativeApiClient(models.ApiClient):
     def _deserialize_sealed_pool(self, remote: t.Any) -> SealedPool:
         return SealedPool(
             pool_id = remote['id'],
-            user = self._deserialize_user(remote['user']),
+            user = User.deserialize(remote['user'], self),
             client = self,
             decks = (
                 list(map(self._deserialize_limited_deck, remote['decks']))
@@ -322,7 +315,7 @@ class NativeApiClient(models.ApiClient):
             model_id = remote['id'],
             name = remote['name'],
             release = remote['release'],
-            players = {self._deserialize_user(player) for player in remote['players']},
+            players = {User.deserialize(player, self) for player in remote['players']},
             state = SealedSession.SealedSessionState[remote['state']],
             pool_size = remote['pool_size'],
             game_format = remote['format'],

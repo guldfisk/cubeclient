@@ -210,6 +210,11 @@ class RemoteModel(ABC):
     def id(self) -> t.Union[str, int]:
         return self._id
 
+    # @abstractmethod  Not yet, too lazy to migrate
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> RemoteModel:
+        raise NotImplemented()
+
     def __hash__(self) -> int:
         return hash(self._id)
 
@@ -231,6 +236,14 @@ class User(RemoteModel):
     def __init__(self, model_id: t.Union[str, int], username: str, client: ApiClient):
         super().__init__(model_id, client)
         self._username = username
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> User:
+        return cls(
+            model_id = remote['id'],
+            username = remote['username'],
+            client = client,
+        )
 
     @property
     def username(self) -> str:
