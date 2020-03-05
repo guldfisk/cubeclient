@@ -7,8 +7,9 @@ import requests as r
 
 from cubeclient import models
 from cubeclient.models import (
-    PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility, SealedPool, P, SealedSession,
-    LimitedDeck, User)
+    PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility, LimitedPool, P, LimitedSession,
+    LimitedDeck, User,
+    CubeRelease)
 from magiccube.collections.cube import Cube
 from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
@@ -25,8 +26,7 @@ class NativeApiClient(models.ApiClient):
     _DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
 
     def __init__(self, host: str, db: CardDatabase, *, token: t.Optional[str] = None):
-        super().__init__(host, token = token)
-        self._db = db
+        super().__init__(host, db, token = token)
 
         self._strategy = RawStrategy(db)
 
@@ -48,7 +48,7 @@ class NativeApiClient(models.ApiClient):
 
         url = f'http://{self._host}/api/{endpoint}/'
 
-        print('request', url, kwargs)
+        print(method, url, kwargs)
 
         response = r.request(
             method,
@@ -73,32 +73,16 @@ class NativeApiClient(models.ApiClient):
         self._token = response['token']
         return self._token
 
-    def _deserialize_cube_release(self, remote: t.Any) -> models.CubeRelease:
-        return models.CubeRelease(
-            model_id = remote['id'],
-            created_at = datetime.datetime.strptime(remote['created_at'], self._DATETIME_FORMAT),
-            name = remote['name'],
-            intended_size = remote['intended_size'],
-            cube = (
-                RawStrategy(self._db).deserialize(
-                    Cube,
-                    remote['cube']
-                )
-                if 'cube' in remote else
-                None
-            ),
-            client = self,
-        )
-
     def release(self, release: t.Union[models.CubeRelease, str, int]) -> models.CubeRelease:
-        return self._deserialize_cube_release(
+        return CubeRelease.deserialize(
             self._make_request(
                 'cube-releases/{}'.format(
                     release.id
                     if isinstance(release, models.CubeRelease) else
                     release
                 )
-            )
+            ),
+            self,
         )
 
     def _deserialize_versioned_cube(self, remote) -> VersionedCube:
@@ -108,7 +92,7 @@ class NativeApiClient(models.ApiClient):
             created_at = datetime.datetime.strptime(remote['created_at'], self._DATETIME_FORMAT),
             description = remote['description'],
             releases = [
-                self._deserialize_cube_release(release)
+                CubeRelease.deserialize(release, self)
                 for release in
                 remote['releases']
             ],
@@ -287,52 +271,12 @@ class NativeApiClient(models.ApiClient):
             limit,
         )
 
-    def _deserialize_limited_deck(self, remote: t.Any) -> LimitedDeck:
-        return LimitedDeck(
-            deck_id = remote['id'],
-            name = remote['name'],
-            created_at = datetime.datetime.strptime(remote['created_at'], self._DATETIME_FORMAT),
-            deck = RawStrategy(self._db).deserialize(Deck, remote['deck']),
-            client = self,
-        )
-
-    def _deserialize_sealed_pool(self, remote: t.Any) -> SealedPool:
-        return SealedPool(
-            pool_id = remote['id'],
-            user = User.deserialize(remote['user'], self),
-            client = self,
-            decks = (
-                list(map(self._deserialize_limited_deck, remote['decks']))
-                if remote['decks'] and not isinstance(remote['decks'][0], int) else
-                None
-            ),
-            session = self._deserialize_sealed_session(remote['session']) if 'session' in remote else None,
-            pool = RawStrategy(self._db).deserialize(Cube, remote['pool']) if 'pool' in remote else None,
-        )
-
-    def _deserialize_sealed_session(self, remote: t.Any) -> SealedSession:
-        return SealedSession(
-            model_id = remote['id'],
-            name = remote['name'],
-            release = remote['release'],
-            players = {User.deserialize(player, self) for player in remote['players']},
-            state = SealedSession.SealedSessionState[remote['state']],
-            pool_size = remote['pool_size'],
-            game_format = remote['format'],
-            created_at = datetime.datetime.strptime(remote['created_at'], self._DATETIME_FORMAT),
-            client = self,
-            pools = [
-                self._deserialize_sealed_pool(pool)
-                for pool in
-                remote['pools']
-            ] if 'pools' in remote else None
-        )
-
-    def sealed_session(self, session_id: t.Union[str, int]) -> SealedSession:
-        return self._deserialize_sealed_session(
+    def limited_session(self, session_id: t.Union[str, int]) -> LimitedSession:
+        return LimitedSession.deserialize(
             self._make_request(
-                f'sealed/sessions/{session_id}'
-            )
+                f'limited/sessions/{session_id}'
+            ),
+            self,
         )
 
     def _sealed_sessions(
@@ -345,7 +289,7 @@ class NativeApiClient(models.ApiClient):
         ascending: bool = False,
     ) -> t.Any:
         return self._make_request(
-            f'sealed/sessions',
+            f'limited/sessions',
             offset = offset,
             limit = limit,
             sort_key = sort_key,
@@ -353,7 +297,7 @@ class NativeApiClient(models.ApiClient):
             **filters,
         )
 
-    def sealed_sessions(
+    def limited_sessions(
         self,
         offset: int = 0,
         limit: int = 10,
@@ -361,7 +305,7 @@ class NativeApiClient(models.ApiClient):
         filters: t.Optional[t.Mapping[str, t.Any]] = None,
         sort_key: str = 'created_at',
         ascending: bool = False,
-    ) -> PaginatedResponse[SealedSession]:
+    ) -> PaginatedResponse[LimitedSession]:
         return PaginatedResponse(
             lambda _offset, _limit: self._sealed_sessions(
                 _offset,
@@ -370,26 +314,28 @@ class NativeApiClient(models.ApiClient):
                 sort_key = sort_key,
                 ascending = ascending,
             ),
-            self._deserialize_sealed_session,
+            lambda remote: LimitedSession.deserialize(remote, self),
             offset,
             limit,
         )
 
-    def sealed_pool(self, pool_id: t.Union[str, int]) -> SealedPool:
-        return self._deserialize_sealed_pool(
-            self._make_request(f'sealed/pools/{pool_id}')
+    def limited_pool(self, pool_id: t.Union[str, int]) -> LimitedPool:
+        return LimitedPool.deserialize(
+            self._make_request(f'limited/pools/{pool_id}'),
+            self,
         )
 
-    def upload_sealed_deck(self, pool_id: t.Union[str, int], name: str, deck: Deck) -> LimitedDeck:
-        return self._deserialize_limited_deck(
+    def upload_limited_deck(self, pool_id: t.Union[str, int], name: str, deck: Deck) -> LimitedDeck:
+        return LimitedDeck.deserialize(
             self._make_request(
-                f'sealed/pools/{pool_id}',
+                f'limited/pools/{pool_id}',
                 method = 'POST',
                 data = {
                     'deck': JsonId.serialize(deck),
                     'name': name,
                 }
-            )
+            ),
+            self,
         )
 
     # def patch_report(self, patch: t.Union[PatchModel, int, str]) -> UpdateReport:

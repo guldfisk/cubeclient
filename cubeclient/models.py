@@ -6,6 +6,10 @@ from abc import ABC, abstractmethod
 import datetime
 from enum import Enum
 
+from mtgorp.models.serilization.strategies.raw import RawStrategy
+
+from mtgorp.db.database import CardDatabase
+
 from magiccube.collections.cube import Cube
 from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
@@ -14,20 +18,28 @@ from mtgorp.models.collections.deck import Deck
 from mtgorp.models.persistent.cardboard import Cardboard
 from mtgorp.models.persistent.printing import Printing
 
+
 R = t.TypeVar('R')
 P = t.TypeVar('P', bound = t.Union[Printing, Cardboard])
+
+DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
 
 
 class ApiClient(ABC):
 
-    def __init__(self, host: str, *, token: t.Optional[str] = None):
+    def __init__(self, host: str, db: CardDatabase, *, token: t.Optional[str] = None):
         self._host = host
+        self._db = db
         self._token = token
         self._user = None
 
     @property
     def host(self) -> str:
         return self._host
+
+    @property
+    def db(self) -> CardDatabase:
+        return self._db
 
     @property
     def token(self) -> str:
@@ -100,11 +112,11 @@ class ApiClient(ABC):
         pass
 
     @abstractmethod
-    def sealed_session(self, session_id: t.Union[str, int]) -> SealedSession:
+    def limited_session(self, session_id: t.Union[str, int]) -> LimitedSession:
         pass
 
     @abstractmethod
-    def sealed_sessions(
+    def limited_sessions(
         self,
         offset: int = 0,
         limit: int = 10,
@@ -112,15 +124,15 @@ class ApiClient(ABC):
         filters: t.Optional[t.Mapping[str, t.Any]] = None,
         sort_key: str = 'created_at',
         ascending: bool = False,
-    ) -> PaginatedResponse[SealedSession]:
+    ) -> PaginatedResponse[LimitedSession]:
         pass
 
     @abstractmethod
-    def sealed_pool(self, pool_id: t.Union[str, int]) -> SealedPool:
+    def limited_pool(self, pool_id: t.Union[str, int]) -> LimitedPool:
         pass
 
     @abstractmethod
-    def upload_sealed_deck(self, pool_id: t.Union[str, int], name: str, deck: Deck) -> LimitedDeck:
+    def upload_limited_deck(self, pool_id: t.Union[str, int], name: str, deck: Deck) -> LimitedDeck:
         pass
 
     # @abstractmethod
@@ -297,11 +309,11 @@ class CubeRelease(RemoteModel):
     def __init__(
         self,
         model_id: t.Union[str, int],
-        created_at: datetime.datetime,
         name: str,
-        intended_size: int,
-        cube: t.Optional[Cube],
         client: ApiClient,
+        created_at: t.Optional[datetime.datetime] = None,
+        intended_size: t.Optional[int] = None,
+        cube: t.Optional[Cube] = None,
     ):
         super().__init__(model_id, client)
         self._created_at = created_at
@@ -309,8 +321,38 @@ class CubeRelease(RemoteModel):
         self._intended_size = intended_size
         self._cube = cube
 
+    def _fetch(self) -> None:
+        release = self._api_client.release(self)
+        self._created_at = release.created_at
+        self._intended_size = release.intended_size
+        self._cube = release.cube
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> CubeRelease:
+        return cls(
+            model_id = remote['id'],
+            created_at = (
+                datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT)
+                if 'created_at' in remote else
+                None
+            ),
+            name = remote['name'],
+            intended_size = remote.get('intended_size'),
+            cube = (
+                RawStrategy(client.db).deserialize(
+                    Cube,
+                    remote['cube']
+                )
+                if 'cube' in remote else
+                None
+            ),
+            client = client,
+        )
+
     @property
     def created_at(self) -> datetime.datetime:
+        if self._created_at is None:
+            self._fetch()
         return self._created_at
 
     @property
@@ -319,12 +361,14 @@ class CubeRelease(RemoteModel):
 
     @property
     def intended_size(self) -> int:
+        if self._intended_size is None:
+            self._fetch()
         return self._intended_size
 
     @property
     def cube(self) -> Cube:
         if self._cube is None:
-            self._cube = self._api_client.release(self).cube
+            self._fetch()
         return self._cube
 
 
@@ -412,7 +456,111 @@ class DistributionPossibility(RemoteModel):
         return self._trap_collection
 
 
-class SealedSession(RemoteModel):
+class BoosterSpecification(RemoteModel):
+
+    def __init__(self, model_id: t.Union[str, int], amount: int, client: ApiClient):
+        super().__init__(model_id, client)
+        self._amount = amount
+
+    @property
+    def amount(self) -> int:
+        return self._amount
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> BoosterSpecification:
+        _type = _booster_specification_map[remote['type']]
+        return _type(
+            model_id = remote['id'],
+            amount = remote['amount'],
+            client = client,
+            **_type.deserialize_values(remote, client),
+        )
+
+    @classmethod
+    @abstractmethod
+    def deserialize_values(cls, remote: t.Any, client: ApiClient) -> t.Mapping[str, t.Any]:
+        pass
+
+
+class CubeBoosterSpecification(BoosterSpecification):
+
+    def __init__(
+        self,
+        model_id: t.Union[str, int],
+        amount: int,
+        release: CubeRelease,
+        size: int,
+        allow_intersection: bool,
+        allow_repeat: bool,
+        client: ApiClient
+    ):
+        super().__init__(model_id, amount, client)
+        self._amount = amount
+        self._release = release
+        self._size = size
+        self._allow_intersection = allow_intersection
+        self._allow_repeat = allow_repeat
+
+    @property
+    def release(self) -> CubeRelease:
+        return self._release
+
+    @property
+    def size(self) -> int:
+        return self._size
+
+    @property
+    def allow_intersection(self) -> bool:
+        return self._allow_intersection
+
+    @property
+    def allow_repeat(self) -> bool:
+        return self._allow_repeat
+
+    @classmethod
+    def deserialize_values(cls, remote: t.Any, client: ApiClient) -> t.Mapping[str, t.Any]:
+        return {
+            'release': CubeRelease.deserialize(remote['release'], client),
+            'size': remote['size'],
+            'allow_intersection': remote['allow_intersection'],
+            'allow_repeat': remote['allow_repeat'],
+        }
+
+
+_booster_specification_map = {
+    'CubeBoosterSpecification': CubeBoosterSpecification,
+}
+
+
+class PoolSpecification(RemoteModel):
+
+    def __init__(
+        self,
+        model_id: t.Union[str, int],
+        booster_specifications: t.List[BoosterSpecification],
+        client: ApiClient,
+    ):
+        super().__init__(model_id, client)
+        self._booster_specifications = booster_specifications
+
+    @property
+    def booster_specifications(self) -> t.List[BoosterSpecification]:
+        return self._booster_specifications
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> PoolSpecification:
+        return cls(
+            model_id = remote['id'],
+            booster_specifications = [
+                BoosterSpecification.deserialize(booster_specification, client)
+                for booster_specification in
+                remote['specifications']
+            ],
+            client = client,
+        )
+
+
+class LimitedSession(RemoteModel):
     class SealedSessionState(Enum):
         DECK_BUILDING = 0
         PLAYING = 1
@@ -422,32 +570,55 @@ class SealedSession(RemoteModel):
         self,
         model_id: t.Union[str, int],
         name: str,
-        release: t.Any,
+        game_type: str,
+        game_format: str,
         players: t.AbstractSet[User],
         state: SealedSessionState,
-        pool_size: int,
-        game_format: str,
         created_at: datetime.datetime,
+        pool_specification: PoolSpecification,
         client: ApiClient,
-        pools: t.Optional[t.List[SealedPool]] = None,
+        pools: t.Optional[t.List[LimitedPool]] = None,
     ):
         super().__init__(model_id, client)
         self._name = name
-        self._release = release
+        self._game_type = game_type
+        self._game_format = game_format
         self._players = players
         self._state = state
-        self._pool_size = pool_size
-        self._game_format = game_format
         self._created_at = created_at
+        self._pool_specification = pool_specification
         self._pools = pools
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> LimitedSession:
+        return cls(
+            model_id = remote['id'],
+            name = remote['name'],
+            game_type = remote['game_type'],
+            players = {User.deserialize(player, client) for player in remote['players']},
+            state = LimitedSession.SealedSessionState[remote['state']],
+            game_format = remote['format'],
+            created_at = datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT),
+            pool_specification = PoolSpecification.deserialize(remote['pool_specification'], client),
+            client = client,
+            pools = [
+                LimitedPool.deserialize(pool, client)
+                for pool in
+                remote['pools']
+            ] if 'pools' in remote else None
+        )
 
     @property
     def name(self) -> str:
         return self._name
 
     @property
-    def release(self):
-        return self._release
+    def game_type(self) -> str:
+        return self._game_type
+
+    @property
+    def game_format(self) -> str:
+        return self._game_format
 
     @property
     def players(self) -> t.AbstractSet[User]:
@@ -458,21 +629,17 @@ class SealedSession(RemoteModel):
         return self._state
 
     @property
-    def pool_size(self) -> int:
-        return self._pool_size
-
-    @property
-    def game_format(self) -> str:
-        return self._game_format
-
-    @property
     def created_at(self) -> datetime.datetime:
         return self._created_at
 
     @property
-    def pools(self) -> t.List[SealedPool]:
+    def pool_specification(self) -> PoolSpecification:
+        return self._pool_specification
+
+    @property
+    def pools(self) -> t.List[LimitedPool]:
         if self._pools is None:
-            self._pools = self._api_client.sealed_session(self._id)._pools
+            self._pools = self._api_client.limited_session(self._id)._pools
         return self._pools
 
 
@@ -491,6 +658,16 @@ class LimitedDeck(RemoteModel):
         self._created_at = created_at
         self._deck = deck
 
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> LimitedDeck:
+        return cls(
+            deck_id = remote['id'],
+            name = remote['name'],
+            created_at = datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT),
+            deck = RawStrategy(client.db).deserialize(Deck, remote['deck']),
+            client = client,
+        )
+
     @property
     def name(self) -> str:
         return self._name
@@ -504,7 +681,7 @@ class LimitedDeck(RemoteModel):
         return self._deck
 
 
-class SealedPool(RemoteModel):
+class LimitedPool(RemoteModel):
 
     def __init__(
         self,
@@ -512,7 +689,7 @@ class SealedPool(RemoteModel):
         user: User,
         client: ApiClient,
         decks: t.Optional[t.List[LimitedDeck]] = None,
-        session: t.Optional[SealedSession] = None,
+        session: t.Optional[LimitedSession] = None,
         pool: t.Optional[Cube] = None,
     ):
         super().__init__(pool_id, client)
@@ -521,8 +698,23 @@ class SealedPool(RemoteModel):
         self._pool = pool
         self._session = session
 
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> LimitedPool:
+        return cls(
+            pool_id = remote['id'],
+            user = User.deserialize(remote['user'], client),
+            client = client,
+            decks = (
+                [LimitedDeck.deserialize(deck, client) for deck in remote['decks']]
+                if remote['decks'] and not isinstance(remote['decks'][0], int) else
+                None
+            ),
+            session = LimitedSession.deserialize(remote['session'], client) if 'session' in remote else None,
+            pool = RawStrategy(client.db).deserialize(Cube, remote['pool']) if 'pool' in remote else None,
+        )
+
     def _fetch(self) -> None:
-        pool = self._api_client.sealed_pool(self._id)
+        pool = self._api_client.limited_pool(self._id)
         self._decks = pool._decks if pool._decks else []
         self._pool = pool._pool
         self._session = pool._session
@@ -544,7 +736,7 @@ class SealedPool(RemoteModel):
         return self._pool
 
     @property
-    def session(self) -> SealedSession:
+    def session(self) -> LimitedSession:
         if self._session is None:
             self._fetch()
         return self._session

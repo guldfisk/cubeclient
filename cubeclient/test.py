@@ -1,6 +1,6 @@
 from requests import HTTPError
 
-from cubeclient.models import SealedSession
+from cubeclient.models import LimitedSession, CubeBoosterSpecification
 from mtgorp.db.load import Loader
 
 from cubeclient.endpoints import NativeApiClient
@@ -16,27 +16,27 @@ def test():
 
     client.login('root', '1')
 
-    for session in client.sealed_sessions(limit = 2, filters = {'name_filter': 'foamy'}):
-        for pool in session.pools:
-            try:
-                client.upload_sealed_deck(
-                    pool.id,
-                    'some deck',
-                    Deck(
-                        (db.cardboards['Mountain'].printing,) * 40,
-                        (db.cardboards['Mountain'].printing,) * 15,
-                    )
-                )
-            except HTTPError as e:
-                print(e, e.response.json())
+    print(client.user.username)
 
-    # print('l go')
-    # for cardboard in (
-    #     set(client.search('block=theros !t;basic', search_target = Cardboard, limit = 10))
-    #     & set(client.search('e=thb', search_target = Cardboard, limit = 1000))
-    # ):
-    #     if cardboard.original_printing.expansion.block == db.expansions['THS'].block:
-    #         print(cardboard.name)
+    for session in client.limited_sessions(limit = 2, filters = {'name_filter': 'penny'}):
+        for specification in session.pool_specification.booster_specifications:
+            if isinstance(specification, CubeBoosterSpecification):
+                print(specification.release.name)
+                print(specification.release.intended_size)
+            print(specification.amount)
+        # for pool in session.pools:
+        #     try:
+        #         client.upload_limited_deck(
+        #             pool.id,
+        #             'some deck',
+        #             Deck(
+        #                 (db.cardboards['Mountain'].printing,) * 40,
+        #                 (db.cardboards['Mountain'].printing,) * 15,
+        #             )
+        #         )
+        #     except HTTPError as e:
+        #         print(e, e.response.json())
+
 
 
 if __name__ == '__main__':
