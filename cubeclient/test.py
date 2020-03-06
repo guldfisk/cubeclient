@@ -37,6 +37,9 @@ def test():
         #     except HTTPError as e:
         #         print(e, e.response.json())
 
+    client.versioned_cubes()
+    for vc in client.versioned_cubes():
+        print(vc.releases)
 
 
 if __name__ == '__main__':

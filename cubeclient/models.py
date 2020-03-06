@@ -62,7 +62,12 @@ class ApiClient(ABC):
         pass
 
     @abstractmethod
-    def versioned_cubes(self, offset: int = 0, limit: int = 10) -> PaginatedResponse[VersionedCube]:
+    def versioned_cubes(
+        self,
+        offset: int = 0,
+        limit: int = 10,
+        cached: bool = True,
+    ) -> PaginatedResponse[VersionedCube]:
         pass
 
     @abstractmethod

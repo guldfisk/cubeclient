@@ -30,6 +30,8 @@ class NativeApiClient(models.ApiClient):
 
         self._strategy = RawStrategy(db)
 
+        self._versioned_cubes = None
+
     def _make_request(
         self,
         endpoint: str,
@@ -99,7 +101,7 @@ class NativeApiClient(models.ApiClient):
             client = self,
         )
 
-    def _versioned_cubes(self, offset: int, limit: int) -> t.List[t.Any]:
+    def _get_versioned_cubes(self, offset: int, limit: int) -> t.List[t.Any]:
         return self._make_request('versioned-cubes', offset = offset, limit = limit)
 
     def versioned_cube(self, versioned_cube_id: t.Union[str, int]) -> VersionedCube:
@@ -109,13 +111,23 @@ class NativeApiClient(models.ApiClient):
             )
         )
 
-    def versioned_cubes(self, offset: int = 0, limit: int = 10) -> PaginatedResponse[VersionedCube]:
-        return PaginatedResponse(
-            self._versioned_cubes,
+    def versioned_cubes(
+        self,
+        offset: int = 0,
+        limit: int = 10,
+        cached: bool = True,
+    ) -> PaginatedResponse[VersionedCube]:
+        if self._versioned_cubes is not None and cached:
+            return self._versioned_cubes
+
+        self._versioned_cubes = PaginatedResponse(
+            self._get_versioned_cubes,
             self._deserialize_versioned_cube,
             offset,
             limit,
         )
+
+        return self._versioned_cubes
 
     def _serialize_patch(self, remote: t.Any) -> PatchModel:
         return PatchModel(
