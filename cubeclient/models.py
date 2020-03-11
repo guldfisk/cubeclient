@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 import datetime
 from enum import Enum
 
+from mtgorp.models.persistent.expansion import Expansion
+
 from mtgorp.models.serilization.strategies.raw import RawStrategy
 
 from mtgorp.db.database import CardDatabase
@@ -17,7 +19,6 @@ from magiccube.update.cubeupdate import VerboseCubePatch
 from mtgorp.models.collections.deck import Deck
 from mtgorp.models.persistent.cardboard import Cardboard
 from mtgorp.models.persistent.printing import Printing
-
 
 R = t.TypeVar('R')
 P = t.TypeVar('P', bound = t.Union[Printing, Cardboard])
@@ -500,7 +501,6 @@ class CubeBoosterSpecification(BoosterSpecification):
         client: ApiClient
     ):
         super().__init__(model_id, amount, client)
-        self._amount = amount
         self._release = release
         self._size = size
         self._allow_intersection = allow_intersection
@@ -532,8 +532,32 @@ class CubeBoosterSpecification(BoosterSpecification):
         }
 
 
+class ExpansionBoosterSpecification(BoosterSpecification):
+
+    def __init__(
+        self,
+        model_id: t.Union[str, int],
+        amount: int,
+        expansion: Expansion,
+        client: ApiClient
+    ):
+        super().__init__(model_id, amount, client)
+        self._expansion = expansion
+
+    @property
+    def expansion(self) -> Expansion:
+        return self._expansion
+
+    @classmethod
+    def deserialize_values(cls, remote: t.Any, client: ApiClient) -> t.Mapping[str, t.Any]:
+        return {
+            'expansion': client.db.expansions[remote['expansion_code']],
+        }
+
+
 _booster_specification_map = {
     'CubeBoosterSpecification': CubeBoosterSpecification,
+    'ExpansionBoosterSpecification': ExpansionBoosterSpecification,
 }
 
 
