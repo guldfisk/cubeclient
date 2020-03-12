@@ -555,9 +555,34 @@ class ExpansionBoosterSpecification(BoosterSpecification):
         }
 
 
+class AllCardsBoosterSpecification(BoosterSpecification):
+
+    def __init__(
+        self,
+        model_id: t.Union[str, int],
+        amount: int,
+        respect_printings: bool,
+        client: ApiClient
+    ):
+        super().__init__(model_id, amount, client)
+        self._respect_printings = respect_printings
+
+    @property
+    def respect_printings(self) -> bool:
+        return self._respect_printings
+
+    @classmethod
+    def deserialize_values(cls, remote: t.Any, client: ApiClient) -> t.Mapping[str, t.Any]:
+        return {
+            'respect_printings': remote['respect_printings'],
+        }
+
+
+
 _booster_specification_map = {
     'CubeBoosterSpecification': CubeBoosterSpecification,
     'ExpansionBoosterSpecification': ExpansionBoosterSpecification,
+    'AllCardsBoosterSpecification': AllCardsBoosterSpecification,
 }
 
 
