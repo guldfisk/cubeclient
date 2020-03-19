@@ -7,18 +7,17 @@ import datetime
 from enum import Enum
 
 from mtgorp.models.persistent.expansion import Expansion
-
 from mtgorp.models.serilization.strategies.raw import RawStrategy
-
 from mtgorp.db.database import CardDatabase
+from mtgorp.models.collections.deck import Deck
+from mtgorp.models.persistent.cardboard import Cardboard
+from mtgorp.models.persistent.printing import Printing
 
 from magiccube.collections.cube import Cube
 from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
 from magiccube.update.cubeupdate import VerboseCubePatch
-from mtgorp.models.collections.deck import Deck
-from mtgorp.models.persistent.cardboard import Cardboard
-from mtgorp.models.persistent.printing import Printing
+
 
 R = t.TypeVar('R')
 P = t.TypeVar('P', bound = t.Union[Printing, Cardboard])
