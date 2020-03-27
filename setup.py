@@ -26,7 +26,7 @@ setup(
         'promise',
         'frozendict',
         'bidict',
-        'simplejson', 'PyQt5'
+        'simplejson',
     ],
 
 )
