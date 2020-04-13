@@ -18,7 +18,6 @@ from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
 from magiccube.update.cubeupdate import VerboseCubePatch
 
-
 R = t.TypeVar('R')
 P = t.TypeVar('P', bound = t.Union[Printing, Cardboard])
 
@@ -577,7 +576,6 @@ class AllCardsBoosterSpecification(BoosterSpecification):
         }
 
 
-
 _booster_specification_map = {
     'CubeBoosterSpecification': CubeBoosterSpecification,
     'ExpansionBoosterSpecification': ExpansionBoosterSpecification,
@@ -627,6 +625,8 @@ class LimitedSession(RemoteModel):
         game_format: str,
         players: t.AbstractSet[User],
         state: SealedSessionState,
+        open_decks: bool,
+        open_pools: bool,
         created_at: datetime.datetime,
         pool_specification: PoolSpecification,
         client: ApiClient,
@@ -638,6 +638,8 @@ class LimitedSession(RemoteModel):
         self._game_format = game_format
         self._players = players
         self._state = state
+        self._open_decks = open_decks
+        self._open_pools = open_pools
         self._created_at = created_at
         self._pool_specification = pool_specification
         self._pools = pools
@@ -649,7 +651,9 @@ class LimitedSession(RemoteModel):
             name = remote['name'],
             game_type = remote['game_type'],
             players = {User.deserialize(player, client) for player in remote['players']},
-            state = LimitedSession.SealedSessionState[remote['state']],
+            state = cls.SealedSessionState[remote['state']],
+            open_decks = remote['open_decks'],
+            open_pools = remote['open_pools'],
             game_format = remote['format'],
             created_at = datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT),
             pool_specification = PoolSpecification.deserialize(remote['pool_specification'], client),
@@ -680,6 +684,14 @@ class LimitedSession(RemoteModel):
     @property
     def state(self) -> SealedSessionState:
         return self._state
+
+    @property
+    def open_decks(self) -> bool:
+        return self._open_decks
+
+    @property
+    def open_pools(self) -> bool:
+        return self._open_pools
 
     @property
     def created_at(self) -> datetime.datetime:
@@ -741,15 +753,17 @@ class LimitedPool(RemoteModel):
         pool_id: t.Union[str, int],
         user: User,
         client: ApiClient,
-        decks: t.Optional[t.List[LimitedDeck]] = None,
+        deck: t.Union[LimitedDeck, int] = None,
         session: t.Optional[LimitedSession] = None,
         pool: t.Optional[Cube] = None,
     ):
         super().__init__(pool_id, client)
         self._user = user
-        self._decks = decks
+        self._deck = deck
         self._pool = pool
         self._session = session
+
+        self._fetched_full: bool = False
 
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> LimitedPool:
@@ -757,9 +771,9 @@ class LimitedPool(RemoteModel):
             pool_id = remote['id'],
             user = User.deserialize(remote['user'], client),
             client = client,
-            decks = (
-                [LimitedDeck.deserialize(deck, client) for deck in remote['decks']]
-                if remote['decks'] and not isinstance(remote['decks'][0], int) else
+            deck = (
+                LimitedDeck.deserialize(remote['deck'], client)
+                if remote['deck'] and not isinstance(remote['deck'], int) else
                 None
             ),
             session = LimitedSession.deserialize(remote['session'], client) if 'session' in remote else None,
@@ -768,19 +782,20 @@ class LimitedPool(RemoteModel):
 
     def _fetch(self) -> None:
         pool = self._api_client.limited_pool(self._id)
-        self._decks = pool._decks if pool._decks else []
+        self._deck = pool._deck
         self._pool = pool._pool
         self._session = pool._session
+        self._fetched_full = True
 
     @property
     def user(self) -> user:
         return self._user
 
     @property
-    def decks(self) -> t.List[LimitedDeck]:
-        if self._decks is None:
+    def deck(self) -> t.Optional[LimitedDeck]:
+        if self._deck is None and not self._fetched_full:
             self._fetch()
-        return self._decks
+        return self._deck
 
     @property
     def pool(self) -> Cube:
