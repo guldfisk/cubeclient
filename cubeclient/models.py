@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import threading
 import typing as t
 
 from abc import ABC, abstractmethod
 import datetime
 from enum import Enum
+
+from promise import Promise
 
 from mtgorp.models.persistent.expansion import Expansion
 from mtgorp.models.serilization.strategies.raw import RawStrategy
@@ -32,6 +35,8 @@ class ApiClient(ABC):
         self._token = token
         self._user = None
 
+        self._user_lock = threading.Lock()
+
     @property
     def host(self) -> str:
         return self._host
@@ -42,18 +47,29 @@ class ApiClient(ABC):
 
     @property
     def token(self) -> str:
-        return self._token
+        with self._user_lock:
+            return self._token
 
     @token.setter
     def token(self, value: str) -> None:
-        self._token = value
+        with self._user_lock:
+            self._token = value
 
     @property
     def user(self) -> t.Optional[User]:
-        return self._user
+        with self._user_lock:
+            return self._user
 
     @abstractmethod
     def login(self, username: str, password: str) -> str:
+        pass
+
+    @abstractmethod
+    def logout(self) -> None:
+        pass
+    
+    @abstractmethod
+    def db_info(self) -> DbInfo:
         pass
 
     @abstractmethod
@@ -139,12 +155,198 @@ class ApiClient(ABC):
     def upload_limited_deck(self, pool_id: t.Union[str, int], name: str, deck: Deck) -> LimitedDeck:
         pass
 
-    # @abstractmethod
-    # def patch_report(self, patch: t.Union[PatchModel, int, str]) -> UpdateReport:
-    #     pass
+
+class AsyncClient(ABC):
+
+    @property
+    @abstractmethod
+    def host(self) -> str:
+        pass
+
+    @property
+    @abstractmethod
+    def db(self) -> CardDatabase:
+        pass
+
+    @property
+    @abstractmethod
+    def token(self) -> str:
+        pass
+
+    @property
+    @abstractmethod
+    def user(self) -> t.Optional[User]:
+        pass
+
+    @abstractmethod
+    def login(self, username: str, password: str) -> Promise[str]:
+        pass
+
+    @abstractmethod
+    def logout(self) -> None:
+        pass
+
+    @abstractmethod
+    def db_info(self) -> Promise[DbInfo]:
+        pass
+
+    @abstractmethod
+    def release(self, release: t.Union[CubeRelease, str, int]) -> Promise[CubeRelease]:
+        pass
+
+    @abstractmethod
+    def versioned_cubes(
+        self,
+        offset: int = 0,
+        limit: int = 10,
+        cached: bool = True,
+    ) -> Promise[StaticPaginationResult[VersionedCube]]:
+        pass
+
+    @abstractmethod
+    def versioned_cube(self, versioned_cube_id: t.Union[str, int]) -> Promise[VersionedCube]:
+        pass
+
+    @abstractmethod
+    def patch(self, patch_id: t.Union[str, int]) -> Promise[PatchModel]:
+        pass
+
+    @abstractmethod
+    def patches(
+        self,
+        versioned_cube: t.Union[VersionedCube, int, str],
+        offset: int = 0,
+        limit: int = 10,
+    ) -> Promise[StaticPaginationResult[PatchModel]]:
+        pass
+
+    @abstractmethod
+    def preview_patch(self, patch: t.Union[PatchModel, int, str]) -> Promise[MetaCube]:
+        pass
+
+    @abstractmethod
+    def verbose_patch(self, patch: t.Union[PatchModel, int, str]) -> Promise[VerboseCubePatch]:
+        pass
+
+    @abstractmethod
+    def distribution_possibilities(
+        self,
+        patch: t.Union[PatchModel, int, str],
+        offset: int = 0,
+        limit: int = 10,
+    ) -> PaginatedResponse[DistributionPossibility]:
+        pass
+
+    @abstractmethod
+    def search(
+        self,
+        query: str,
+        offset: int = 0,
+        limit = 10,
+        order_by: str = 'name',
+        descending: bool = False,
+        search_target: t.Type[P] = Printing,
+    ) -> Promise[StaticPaginationResult[P]]:
+        pass
+
+    @abstractmethod
+    def limited_session(self, session_id: t.Union[str, int]) -> Promise[LimitedSession]:
+        pass
+
+    @abstractmethod
+    def limited_sessions(
+        self,
+        offset: int = 0,
+        limit: int = 10,
+        *,
+        filters: t.Optional[t.Mapping[str, t.Any]] = None,
+        sort_key: str = 'created_at',
+        ascending: bool = False,
+    ) -> Promise[StaticPaginationResult[LimitedSession]]:
+        pass
+
+    @abstractmethod
+    def limited_pool(self, pool_id: t.Union[str, int]) -> Promise[LimitedPool]:
+        pass
+
+    @abstractmethod
+    def upload_limited_deck(self, pool_id: t.Union[str, int], name: str, deck: Deck) -> Promise[LimitedDeck]:
+        pass
 
 
 class PaginatedResponse(t.Sequence[R]):
+
+    @property
+    @abstractmethod
+    def hits(self) -> int:
+        pass
+
+    @abstractmethod
+    def __getitem__(self, index) -> R:
+        pass
+
+    @abstractmethod
+    def __iter__(self) -> t.Iterator[R]:
+        pass
+
+    @abstractmethod
+    def __contains__(self, item) -> bool:
+        pass
+
+    @abstractmethod
+    def __len__(self):
+        pass
+
+
+class StaticPaginationResult(PaginatedResponse[R]):
+
+    def __init__(
+        self,
+        items: t.Sequence[R],
+        hits: int,
+        offset: int,
+        limit: int,
+    ):
+        self._items = items
+        self._hits = hits
+        self._offset = offset
+        self._limit = limit
+
+    @property
+    def hits(self) -> int:
+        return self._hits
+
+    @property
+    def offset(self) -> int:
+        return self._offset
+
+    @property
+    def limit(self) -> int:
+        return self._limit
+
+    def __getitem__(self, index) -> R:
+        return self._items[index]
+
+    def __iter__(self) -> t.Iterator[R]:
+        return self._items.__iter__()
+
+    def __contains__(self, item) -> bool:
+        return item in self._items
+
+    def __len__(self):
+        return self._items.__len__()
+
+    def __repr__(self):
+        return '{}({}, {}, {}, {})'.format(
+            self.__class__.__name__,
+            self._hits,
+            self._offset,
+            self._limit,
+            self._items,
+        )
+
+
+class DynamicPaginatedResponse(PaginatedResponse[R]):
 
     def __init__(
         self,
@@ -163,6 +365,10 @@ class PaginatedResponse(t.Sequence[R]):
         self._items: t.List[t.Optional[R]] = [None for _ in range(self._count)]
         items = list(map(serializer, response['results']))
         self._items[offset:offset + len(items)] = items
+
+    @property
+    def hits(self) -> int:
+        return self._count
 
     def _fetch_page(self, index: int) -> None:
         for offset_index, item in enumerate(
@@ -193,7 +399,7 @@ class PaginatedResponse(t.Sequence[R]):
     def __contains__(self, item) -> bool:
         return item in self.__iter__()
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self._count
 
     def _repr_iter(self) -> t.Iterator[str]:
@@ -246,6 +452,49 @@ class RemoteModel(ABC):
             self._id,
         )
 
+
+class DbInfo(object):
+    
+    _datetime_format = '%Y-%m-%dT%H:%M:%S'
+    
+    def __init__(
+        self,
+        created_at: datetime.datetime,
+        json_updated_at: datetime.datetime,
+        last_expansion_name: str,
+        checksum: str,
+    ):
+        self._created_at = created_at
+        self._json_updated_at = json_updated_at
+        self._last_expansion_name = last_expansion_name
+        self._checksum = checksum
+        
+    @property
+    def created_at(self) -> datetime.datetime:
+        return self._created_at
+    
+    @property
+    def json_updated_at(self) -> datetime.datetime:
+        return self._json_updated_at
+    
+    @property
+    def last_expansion_name(self) -> str:
+        return self._last_expansion_name
+    
+    @property
+    def checksum(self) -> str:
+        return self._checksum
+    
+    @classmethod
+    def deserialize(cls, remote: t.Mapping[str, t.Any]) -> DbInfo:
+        return cls(
+            created_at = datetime.datetime.strptime(remote['created_at'], cls._datetime_format),
+            json_updated_at = datetime.datetime.strptime(remote['json_updated_at'], cls._datetime_format),
+            last_expansion_name = remote['last_expansion_name'],
+            checksum = remote['checksum'],
+        )
+    
+    
 
 class User(RemoteModel):
 

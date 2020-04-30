@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import datetime
+import logging
 import typing as t
+from abc import abstractmethod, ABCMeta
+from concurrent.futures.thread import ThreadPoolExecutor
 
 import requests as r
+from promise import Promise
 
 from mtgorp.db.database import CardDatabase
 from mtgorp.models.collections.deck import Deck
@@ -21,11 +25,13 @@ from cubeclient import models
 from cubeclient.models import (
     PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility, LimitedPool, P, LimitedSession,
     LimitedDeck, User,
-    CubeRelease
-)
+    CubeRelease,
+    AsyncClient, StaticPaginationResult, R, DynamicPaginatedResponse, DbInfo)
+
+T = t.TypeVar('T')
 
 
-class NativeApiClient(models.ApiClient):
+class BaseNativeApiClient(models.ApiClient):
     _DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
 
     def __init__(self, host: str, db: CardDatabase, *, token: t.Optional[str] = None):
@@ -34,6 +40,17 @@ class NativeApiClient(models.ApiClient):
         self._strategy = RawStrategy(db)
 
         self._versioned_cubes = None
+
+    @classmethod
+    @abstractmethod
+    def _get_paginated_response(
+        cls,
+        endpoint: t.Callable[[int, int], t.Any],
+        serializer: t.Callable[[t.Any], R],
+        offset: int = 0,
+        limit: int = 50,
+    ) -> PaginatedResponse[R]:
+        pass
 
     def _make_request(
         self,
@@ -53,7 +70,7 @@ class NativeApiClient(models.ApiClient):
 
         url = f'http://{self._host}/api/{endpoint}/'
 
-        print(method, url, kwargs)
+        logging.info('{} {} {}'.format(method, url, kwargs))
 
         response = r.request(
             method,
@@ -74,9 +91,18 @@ class NativeApiClient(models.ApiClient):
                 'password': password,
             }
         )
-        self._user = User.deserialize(response['user'], self)
-        self._token = response['token']
+        with self._user_lock:
+            self._user = User.deserialize(response['user'], self)
+            self._token = response['token']
         return self._token
+
+    def logout(self) -> None:
+        with self._user_lock:
+            self._user = None
+            self._token = None
+
+    def db_info(self) -> DbInfo:
+        return DbInfo.deserialize(self._make_request('db-info'))
 
     def release(self, release: t.Union[models.CubeRelease, str, int]) -> models.CubeRelease:
         return CubeRelease.deserialize(
@@ -123,7 +149,7 @@ class NativeApiClient(models.ApiClient):
         if self._versioned_cubes is not None and cached:
             return self._versioned_cubes
 
-        self._versioned_cubes = PaginatedResponse(
+        self._versioned_cubes = self._get_paginated_response(
             self._get_versioned_cubes,
             self._deserialize_versioned_cube,
             offset,
@@ -167,7 +193,7 @@ class NativeApiClient(models.ApiClient):
             if isinstance(versioned_cube, VersionedCube) else
             versioned_cube
         )
-        return PaginatedResponse(
+        return self._get_paginated_response(
             lambda _offset, _limit: self._patches(versioned_cube_id, _offset, _limit),
             self._serialize_patch,
             offset,
@@ -232,7 +258,7 @@ class NativeApiClient(models.ApiClient):
         offset: int = 0,
         limit: int = 10,
     ) -> PaginatedResponse[DistributionPossibility]:
-        return PaginatedResponse(
+        return self._get_paginated_response(
             lambda _offset, _limit: self._distribution_possibilities(patch, _offset, _limit),
             self._deserialize_distribution_possibility,
             offset,
@@ -268,7 +294,7 @@ class NativeApiClient(models.ApiClient):
         search_target: t.Type[P] = Printing,
     ) -> PaginatedResponse[P]:
 
-        return PaginatedResponse(
+        return self._get_paginated_response(
             lambda _offset, _limit: self._search(
                 query,
                 _offset,
@@ -321,7 +347,7 @@ class NativeApiClient(models.ApiClient):
         sort_key: str = 'created_at',
         ascending: bool = False,
     ) -> PaginatedResponse[LimitedSession]:
-        return PaginatedResponse(
+        return self._get_paginated_response(
             lambda _offset, _limit: self._sealed_sessions(
                 _offset,
                 _limit,
@@ -353,11 +379,197 @@ class NativeApiClient(models.ApiClient):
             self,
         )
 
-    # def patch_report(self, patch: t.Union[PatchModel, int, str]) -> UpdateReport:
-    #     pass
 
-    # def release_delta(self, from_release_id: int, to_release_id):
-    #     result = r.get(
-    #         self._get_api_url + f'cube-releases/{to_release_id}/delta-from/{from_release_id}/'
-    #     )
-    #     return result.content
+class NativeApiClient(BaseNativeApiClient):
+
+    @classmethod
+    def _get_paginated_response(
+        cls,
+        endpoint: t.Callable[[int, int], t.Any],
+        serializer: t.Callable[[t.Any], R],
+        offset: int = 0,
+        limit: int = 50,
+    ) -> DynamicPaginatedResponse[R]:
+        return DynamicPaginatedResponse(
+            endpoint,
+            serializer,
+            offset,
+            limit,
+        )
+
+    def versioned_cubes(
+        self,
+        offset: int = 0,
+        limit: int = 10,
+        cached: bool = True,
+    ) -> DynamicPaginatedResponse[VersionedCube]:
+        return super().versioned_cubes(offset, limit, cached)
+
+    def patches(
+        self,
+        versioned_cube: t.Union[VersionedCube, int, str],
+        offset: int = 0,
+        limit: int = 10,
+    ) -> DynamicPaginatedResponse[PatchModel]:
+        return super().patches(versioned_cube, offset, limit)
+
+    def distribution_possibilities(
+        self,
+        patch: t.Union[PatchModel, int, str],
+        offset: int = 0,
+        limit: int = 10,
+    ) -> DynamicPaginatedResponse[DistributionPossibility]:
+        return super().distribution_possibilities(patch, offset, limit)
+
+    def search(
+        self,
+        query: str,
+        offset: int = 0,
+        limit = 10,
+        order_by: str = 'name',
+        descending: bool = False,
+        search_target: t.Type[P] = Printing,
+    ) -> DynamicPaginatedResponse[P]:
+        return super().search(query, offset, limit, order_by, descending, search_target)
+
+    def limited_sessions(
+        self,
+        offset: int = 0,
+        limit: int = 10,
+        *,
+        filters: t.Optional[t.Mapping[str, t.Any]] = None,
+        sort_key: str = 'created_at',
+        ascending: bool = False,
+    ) -> DynamicPaginatedResponse[LimitedSession]:
+        return super().limited_sessions(offset, limit, filters = filters, sort_key = sort_key, ascending = ascending)
+
+
+class StaticNativeApiClient(BaseNativeApiClient):
+
+    @classmethod
+    def _get_paginated_response(
+        cls,
+        endpoint: t.Callable[[int, int], t.Any],
+        serializer: t.Callable[[t.Any], R],
+        offset: int = 0,
+        limit: int = 50,
+    ) -> StaticPaginationResult[R]:
+        response = endpoint(offset, limit)
+        return StaticPaginationResult(
+            list(map(serializer, response['results'])),
+            response['count'],
+            offset,
+            limit,
+        )
+
+    def versioned_cubes(
+        self,
+        offset: int = 0,
+        limit: int = 10,
+        cached: bool = True,
+    ) -> StaticPaginationResult[VersionedCube]:
+        return super().versioned_cubes(offset, limit, cached)
+
+    def patches(
+        self,
+        versioned_cube: t.Union[VersionedCube, int, str],
+        offset: int = 0,
+        limit: int = 10,
+    ) -> StaticPaginationResult[PatchModel]:
+        return super().patches(versioned_cube, offset, limit)
+
+    def distribution_possibilities(
+        self,
+        patch: t.Union[PatchModel, int, str],
+        offset: int = 0,
+        limit: int = 10,
+    ) -> StaticPaginationResult[DistributionPossibility]:
+        return super().distribution_possibilities(patch, offset, limit)
+
+    def search(
+        self,
+        query: str,
+        offset: int = 0,
+        limit = 10,
+        order_by: str = 'name',
+        descending: bool = False,
+        search_target: t.Type[P] = Printing,
+    ) -> StaticPaginationResult[P]:
+        return super().search(query, offset, limit, order_by, descending, search_target)
+
+    def limited_sessions(
+        self,
+        offset: int = 0,
+        limit: int = 10,
+        *,
+        filters: t.Optional[t.Mapping[str, t.Any]] = None,
+        sort_key: str = 'created_at',
+        ascending: bool = False,
+    ) -> StaticPaginationResult[LimitedSession]:
+        return super().limited_sessions(offset, limit, filters = filters, sort_key = sort_key, ascending = ascending)
+
+
+class _AsyncMeta(ABCMeta):
+    # targets
+    excluded = ('host', 'db', 'token', 'user', 'logout')
+
+    @classmethod
+    def _wrap(mcs, name: str) -> t.Callable[..., Promise[T]]:
+        def _wrapped(self: AsyncNativeApiClient, *args, **kwargs):
+            return Promise.resolve(
+                self._executor.submit(
+                    getattr(self._wrapping, name),
+                    *args,
+                    **kwargs,
+                )
+            )
+
+        return _wrapped
+
+    def __new__(mcs, classname, base_classes, attributes):
+        for name, value in base_classes[-1].__dict__.items():
+            if getattr(value, '__isabstractmethod__', False) and not name in mcs.excluded:
+                attributes[name] = mcs._wrap(name)
+
+        return type.__new__(mcs, classname, base_classes, attributes)
+
+
+class AsyncNativeApiClient(AsyncClient, metaclass = _AsyncMeta):
+
+    def __init__(
+        self,
+        host: str,
+        db: CardDatabase,
+        *,
+        executor: t.Union[ThreadPoolExecutor, int, None] = None,
+        token: t.Optional[str] = None,
+    ):
+        self._wrapping = StaticNativeApiClient(host, db, token = token)
+        self._executor = (
+            executor
+            if isinstance(executor, ThreadPoolExecutor) else
+            ThreadPoolExecutor(5 if executor is None else executor)
+        )
+
+    @property
+    def host(self) -> str:
+        return self._wrapping.host
+
+    @property
+    def db(self) -> CardDatabase:
+        return self._wrapping.db
+
+    @property
+    def token(self) -> str:
+        return self._wrapping.token
+
+    @token.setter
+    def token(self, value: str) -> None:
+        self._wrapping.token = value
+
+    @property
+    def user(self) -> t.Optional[User]:
+        return self._wrapping.user
+
+    def logout(self) -> None:
+        self._wrapping.logout()
