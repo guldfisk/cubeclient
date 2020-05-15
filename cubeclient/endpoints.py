@@ -28,7 +28,23 @@ from cubeclient.models import (
     CubeRelease,
     AsyncClient, StaticPaginationResult, R, DynamicPaginatedResponse, DbInfo)
 
+
 T = t.TypeVar('T')
+
+
+def _download_db_from_remote(host: str, target: t.BinaryIO) -> None:
+    uri = f'http://{host}/db'
+    logging.info(f'Downloading db from {uri}')
+    for chunk in r.get(uri, stream = True).iter_content(chunk_size = 1024):
+        target.write(chunk)
+
+
+def download_db_from_remote(host: str, target: t.Union[t.BinaryIO, str]) -> None:
+    if isinstance(target, str):
+        with open(target, 'wb') as f:
+            _download_db_from_remote(host, f)
+    else:
+        _download_db_from_remote(host, target)
 
 
 class BaseNativeApiClient(models.ApiClient):
@@ -57,6 +73,8 @@ class BaseNativeApiClient(models.ApiClient):
         endpoint: str,
         method: str = 'GET',
         data: t.Optional[t.Mapping[str, t.Any]] = None,
+        stream: bool = False,
+        exclude_api: bool = False,
         **kwargs,
     ) -> t.Any:
         if data is None:
@@ -68,7 +86,7 @@ class BaseNativeApiClient(models.ApiClient):
         if self._token is not None:
             headers.setdefault('Authorization', 'Token ' + self._token)
 
-        url = f'http://{self._host}/api/{endpoint}/'
+        url = f'http://{self._host}/{"" if exclude_api else "api/"}{endpoint}{"" if exclude_api else "/"}'
 
         logging.info('{} {} {}'.format(method, url, kwargs))
 
@@ -78,9 +96,15 @@ class BaseNativeApiClient(models.ApiClient):
             data = data,
             params = kwargs,
             headers = headers,
+            stream = stream,
         )
         response.raise_for_status()
+        if stream:
+            return response
         return response.json()
+
+    def download_db_from_remote(self, target: t.Union[t.BinaryIO, str]) -> None:
+        download_db_from_remote(self._host, target)
 
     def login(self, username: str, password: str) -> str:
         response = self._make_request(

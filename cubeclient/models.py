@@ -21,6 +21,7 @@ from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
 from magiccube.update.cubeupdate import VerboseCubePatch
 
+
 R = t.TypeVar('R')
 P = t.TypeVar('P', bound = t.Union[Printing, Cardboard])
 
@@ -61,13 +62,17 @@ class ApiClient(ABC):
             return self._user
 
     @abstractmethod
+    def download_db_from_remote(self, target: t.Union[t.BinaryIO, str]) -> None:
+        pass
+
+    @abstractmethod
     def login(self, username: str, password: str) -> str:
         pass
 
     @abstractmethod
     def logout(self) -> None:
         pass
-    
+
     @abstractmethod
     def db_info(self) -> DbInfo:
         pass
@@ -176,6 +181,10 @@ class AsyncClient(ABC):
     @property
     @abstractmethod
     def user(self) -> t.Optional[User]:
+        pass
+
+    @abstractmethod
+    def download_db_from_remote(self, target: t.Union[t.BinaryIO, str]) -> Promise[None]:
         pass
 
     @abstractmethod
@@ -454,9 +463,8 @@ class RemoteModel(ABC):
 
 
 class DbInfo(object):
-    
     _datetime_format = '%Y-%m-%dT%H:%M:%S'
-    
+
     def __init__(
         self,
         created_at: datetime.datetime,
@@ -468,23 +476,23 @@ class DbInfo(object):
         self._json_updated_at = json_updated_at
         self._last_expansion_name = last_expansion_name
         self._checksum = checksum
-        
+
     @property
     def created_at(self) -> datetime.datetime:
         return self._created_at
-    
+
     @property
     def json_updated_at(self) -> datetime.datetime:
         return self._json_updated_at
-    
+
     @property
     def last_expansion_name(self) -> str:
         return self._last_expansion_name
-    
+
     @property
     def checksum(self) -> str:
         return self._checksum
-    
+
     @classmethod
     def deserialize(cls, remote: t.Mapping[str, t.Any]) -> DbInfo:
         return cls(
@@ -493,8 +501,7 @@ class DbInfo(object):
             last_expansion_name = remote['last_expansion_name'],
             checksum = remote['checksum'],
         )
-    
-    
+
 
 class User(RemoteModel):
 
