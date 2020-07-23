@@ -20,6 +20,7 @@ from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
 from magiccube.collections.nodecollection import NodeCollection, GroupMap
 from magiccube.update.cubeupdate import VerboseCubePatch
+from magiccube.collections.infinites import Infinites
 
 from cubeclient import models
 from cubeclient.models import (
@@ -236,6 +237,7 @@ class BaseNativeApiClient(models.ApiClient):
             cube = RawStrategy(self._db).deserialize(Cube, result['cube']),
             nodes = RawStrategy(self._db).deserialize(NodeCollection, result['nodes']['constrained_nodes']),
             groups = RawStrategy(self._db).deserialize(GroupMap, result['group_map']),
+            infinites = RawStrategy(self._db()).deserialize(Infinites, result['infinites'])
         )
 
     def verbose_patch(self, patch: t.Union[PatchModel, int, str]) -> VerboseCubePatch:

@@ -20,6 +20,8 @@ from magiccube.collections.cube import Cube
 from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
 from magiccube.update.cubeupdate import VerboseCubePatch
+from magiccube.collections.infinites import Infinites
+from magiccube.collections.nodecollection import NodeCollection, GroupMap
 
 
 R = t.TypeVar('R')
@@ -574,21 +576,30 @@ class CubeRelease(RemoteModel):
         created_at: t.Optional[datetime.datetime] = None,
         intended_size: t.Optional[int] = None,
         cube: t.Optional[Cube] = None,
+        constrained_nodes: t.Optional[NodeCollection] = None,
+        group_map: t.Optional[GroupMap] = None,
+        infinites: t.Optional[Infinites] = None,
     ):
         super().__init__(model_id, client)
         self._created_at = created_at
         self._name = name
         self._intended_size = intended_size
         self._cube = cube
+        self._constrained_nodes = constrained_nodes
+        self._group_map = group_map
+        self._infinites = infinites
 
     def _fetch(self) -> None:
         release = self._api_client.release(self)
         self._created_at = release.created_at
         self._intended_size = release.intended_size
         self._cube = release.cube
+        self._constrained_nodes = release.constrained_nodes
+        self._group_map = release.group_map
 
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> CubeRelease:
+        strategy = RawStrategy(client.db)
         return cls(
             model_id = remote['id'],
             created_at = (
@@ -599,11 +610,34 @@ class CubeRelease(RemoteModel):
             name = remote['name'],
             intended_size = remote.get('intended_size'),
             cube = (
-                RawStrategy(client.db).deserialize(
+                strategy.deserialize(
                     Cube,
                     remote['cube']
                 )
                 if 'cube' in remote else
+                None
+            ),
+            constrained_nodes = (
+                strategy.deserialize(
+                    NodeCollection,
+                    remote['constrained_nodes']['constrained_nodes'],
+                )
+                if 'constrained_nodes' in remote else
+                None
+            ),
+            group_map = (
+                strategy.deserialize(
+                    GroupMap,
+                    remote['constrained_nodes']['group_map'],
+                )
+                if 'constrained_nodes' in remote else
+                None
+            ),
+            infinites = (
+                strategy.deserialize(
+                    Infinites,
+                    remote['infinites'],
+                ) if 'infinites' in remote else
                 None
             ),
             client = client,
@@ -630,6 +664,24 @@ class CubeRelease(RemoteModel):
         if self._cube is None:
             self._fetch()
         return self._cube
+
+    @property
+    def constrained_nodes(self) -> NodeCollection:
+        if self._constrained_nodes is None:
+            self._fetch()
+        return self._constrained_nodes
+
+    @property
+    def group_map(self) -> GroupMap:
+        if self._group_map is None:
+            self._fetch()
+        return self._group_map
+
+    @property
+    def infinites(self) -> Infinites:
+        if self._infinites is None:
+            self._fetch()
+        return self._infinites
 
 
 class PatchModel(RemoteModel):
@@ -885,6 +937,7 @@ class LimitedSession(RemoteModel):
         open_pools: bool,
         created_at: datetime.datetime,
         pool_specification: PoolSpecification,
+        infinites: Infinites,
         client: ApiClient,
         pools: t.Optional[t.List[LimitedPool]] = None,
     ):
@@ -898,6 +951,7 @@ class LimitedSession(RemoteModel):
         self._open_pools = open_pools
         self._created_at = created_at
         self._pool_specification = pool_specification
+        self._infinites = infinites
         self._pools = pools
 
     @classmethod
@@ -913,6 +967,7 @@ class LimitedSession(RemoteModel):
             game_format = remote['format'],
             created_at = datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT),
             pool_specification = PoolSpecification.deserialize(remote['pool_specification'], client),
+            infinites = RawStrategy(client.db).deserialize(Infinites, remote['infinites']),
             client = client,
             pools = [
                 LimitedPool.deserialize(pool, client)
@@ -956,6 +1011,10 @@ class LimitedSession(RemoteModel):
     @property
     def pool_specification(self) -> PoolSpecification:
         return self._pool_specification
+
+    @property
+    def infinites(self) -> Infinites:
+        return self._infinites
 
     @property
     def pools(self) -> t.List[LimitedPool]:
