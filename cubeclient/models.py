@@ -560,6 +560,12 @@ class VersionedCube(RemoteModel):
         return self._releases
 
     @property
+    def latest_release(self) -> t.Optional[CubeRelease]:
+        if not self._releases:
+            return None
+        return self._releases[-1]
+
+    @property
     def patches(self) -> PaginatedResponse[PatchModel]:
         if self._patches is None:
             self._patches = self._api_client.patches(self)
