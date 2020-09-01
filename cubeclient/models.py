@@ -890,10 +890,34 @@ class AllCardsBoosterSpecification(BoosterSpecification):
         }
 
 
+class ChaosBoosterSpecification(BoosterSpecification):
+
+    def __init__(
+        self,
+        model_id: t.Union[str, int],
+        amount: int,
+        same: bool,
+        client: ApiClient,
+    ):
+        super().__init__(model_id, amount, client)
+        self._same = same
+
+    @property
+    def same(self) -> bool:
+        return self._same
+
+    @classmethod
+    def deserialize_values(cls, remote: t.Any, client: ApiClient) -> t.Mapping[str, t.Any]:
+        return {
+            'same': remote['same'],
+        }
+
+
 _booster_specification_map = {
     'CubeBoosterSpecification': CubeBoosterSpecification,
     'ExpansionBoosterSpecification': ExpansionBoosterSpecification,
     'AllCardsBoosterSpecification': AllCardsBoosterSpecification,
+    'ChaosBoosterSpecification': ChaosBoosterSpecification,
 }
 
 
