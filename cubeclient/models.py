@@ -30,7 +30,34 @@ P = t.TypeVar('P', bound = t.Union[Printing, Cardboard])
 DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
 
 
-class ApiClient(ABC):
+class BaseClient(ABC):
+
+    @property
+    def synchronous(self) -> BaseClient:
+        return self
+
+    @property
+    @abstractmethod
+    def host(self) -> str:
+        pass
+
+    @property
+    @abstractmethod
+    def db(self) -> CardDatabase:
+        pass
+
+    @property
+    @abstractmethod
+    def token(self) -> str:
+        pass
+
+    @property
+    @abstractmethod
+    def user(self) -> t.Optional[User]:
+        pass
+
+
+class ApiClient(BaseClient):
 
     def __init__(self, host: str, db: CardDatabase, *, token: t.Optional[str] = None):
         self._host = host
@@ -163,27 +190,7 @@ class ApiClient(ABC):
         pass
 
 
-class AsyncClient(ABC):
-
-    @property
-    @abstractmethod
-    def host(self) -> str:
-        pass
-
-    @property
-    @abstractmethod
-    def db(self) -> CardDatabase:
-        pass
-
-    @property
-    @abstractmethod
-    def token(self) -> str:
-        pass
-
-    @property
-    @abstractmethod
-    def user(self) -> t.Optional[User]:
-        pass
+class AsyncClient(BaseClient):
 
     @abstractmethod
     def download_db_from_remote(self, target: t.Union[t.BinaryIO, str]) -> Promise[None]:
@@ -596,7 +603,7 @@ class CubeRelease(RemoteModel):
         self._infinites = infinites
 
     def _fetch(self) -> None:
-        release = self._api_client.release(self)
+        release = self._api_client.synchronous.release(self)
         self._created_at = release.created_at
         self._intended_size = release.intended_size
         self._cube = release.cube
@@ -1126,7 +1133,7 @@ class LimitedPool(RemoteModel):
         )
 
     def _fetch(self) -> None:
-        pool = self._api_client.limited_pool(self._id)
+        pool = self._api_client.synchronous.limited_pool(self._id)
         self._deck = pool._deck
         self._pool = pool._pool
         self._session = pool._session

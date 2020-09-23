@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import threading
 import typing as t
 from abc import abstractmethod, ABCMeta
 from concurrent.futures.thread import ThreadPoolExecutor
@@ -22,12 +23,14 @@ from magiccube.collections.nodecollection import NodeCollection, GroupMap
 from magiccube.update.cubeupdate import VerboseCubePatch
 from magiccube.collections.infinites import Infinites
 
+from cubeclient.utils import TaskAwaiter
 from cubeclient import models
 from cubeclient.models import (
     PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility, LimitedPool, P, LimitedSession,
     LimitedDeck, User,
     CubeRelease,
-    AsyncClient, StaticPaginationResult, R, DynamicPaginatedResponse, DbInfo)
+    AsyncClient, StaticPaginationResult, R, DynamicPaginatedResponse, DbInfo, BaseClient
+)
 
 
 T = t.TypeVar('T')
@@ -536,7 +539,6 @@ class StaticNativeApiClient(BaseNativeApiClient):
 
 
 class _AsyncMeta(ABCMeta):
-    # targets
     excluded = ('host', 'db', 'token', 'user', 'logout')
 
     @classmethod
@@ -576,6 +578,44 @@ class AsyncNativeApiClient(AsyncClient, metaclass = _AsyncMeta):
             if isinstance(executor, ThreadPoolExecutor) else
             ThreadPoolExecutor(5 if executor is None else executor)
         )
+
+        self._release_lock = threading.Lock()
+        self._release_map: t.MutableMapping[int, CubeRelease] = {}
+        self._release_processing: TaskAwaiter[int, CubeRelease] = TaskAwaiter()
+
+    def get_release_managed_noblock(self, release_id: int) -> t.Optional[CubeRelease]:
+        with self._release_lock:
+            return self._release_map.get(release_id)
+
+    def _get_release_managed(self, release_id: int) -> CubeRelease:
+        release = self.get_release_managed_noblock(release_id)
+        if release is not None:
+            return release
+
+        event, in_progress = self._release_processing.get_condition(release_id)
+
+        if in_progress:
+            event.wait()
+            return event.value
+
+        release = self._wrapping.release(release_id)
+        with self._release_lock:
+            self._release_map[release_id] = release
+        event.set_value(release)
+
+        return release
+
+    def get_release_managed(self, release_id: int) -> Promise[CubeRelease]:
+        return Promise.resolve(
+            self._executor.submit(
+                self._get_release_managed,
+                release_id,
+            )
+        )
+
+    @property
+    def synchronous(self) -> BaseClient:
+        return self._wrapping
 
     @property
     def host(self) -> str:
