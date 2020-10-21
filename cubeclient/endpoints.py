@@ -10,6 +10,8 @@ from concurrent.futures.thread import ThreadPoolExecutor
 import requests as r
 from promise import Promise
 
+from yeetlong.taskawaiter import TaskAwaiter
+
 from mtgorp.db.database import CardDatabase
 from mtgorp.models.collections.deck import Deck
 from mtgorp.models.persistent.printing import Printing
@@ -23,7 +25,6 @@ from magiccube.collections.nodecollection import NodeCollection, GroupMap
 from magiccube.update.cubeupdate import VerboseCubePatch
 from magiccube.collections.infinites import Infinites
 
-from cubeclient.utils import TaskAwaiter
 from cubeclient import models
 from cubeclient.models import (
     PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility, LimitedPool, P, LimitedSession,
