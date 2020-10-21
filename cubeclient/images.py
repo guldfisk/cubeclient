@@ -80,7 +80,7 @@ class ImageClient(ImageLoader):
 
         super().__init__(image_cache_size=image_cache_size)
 
-        self._url = url
+        self._url = 'http://' + url if not url.startswith('http') else url
         self._executor = (
             executor
             if executor is isinstance(executor, Executor) else
