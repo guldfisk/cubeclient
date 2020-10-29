@@ -11,7 +11,7 @@ from promise import Promise
 
 from yeetlong.taskawaiter import TaskAwaiter, EventWithValue
 
-from mtgorp.models.persistent.printing import Printing
+from mtgorp.models.interfaces import Printing
 
 from mtgimg import pipeline
 from mtgimg.interface import ImageLoader, ImageRequest, ImageFetchException, Imageable

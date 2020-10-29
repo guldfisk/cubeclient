@@ -14,7 +14,7 @@ from yeetlong.taskawaiter import TaskAwaiter
 
 from mtgorp.db.database import CardDatabase
 from mtgorp.models.collections.deck import Deck
-from mtgorp.models.persistent.printing import Printing
+from mtgorp.models.interfaces import Printing
 from mtgorp.models.serilization.strategies.jsonid import JsonId
 from mtgorp.models.serilization.strategies.raw import RawStrategy
 

@@ -9,12 +9,10 @@ from enum import Enum
 
 from promise import Promise
 
-from mtgorp.models.persistent.expansion import Expansion
+from mtgorp.models.interfaces import Expansion, Cardboard, Printing
 from mtgorp.models.serilization.strategies.raw import RawStrategy
 from mtgorp.db.database import CardDatabase
 from mtgorp.models.collections.deck import Deck
-from mtgorp.models.persistent.cardboard import Cardboard
-from mtgorp.models.persistent.printing import Printing
 
 from magiccube.collections.cube import Cube
 from magiccube.collections.laps import TrapCollection
