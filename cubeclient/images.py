@@ -35,13 +35,13 @@ class ClientFetcher(object):
         with event as event:
             response = requests.get(
                 urljoin(url, '/api/images/') + cls._get_identifier(image_request) + '/',
-                params={
+                params = {
                     'size_slug': image_request.size_slug.name.lower(),
                     'cropped': image_request.crop,
                     'back': image_request.back,
                     'type': image_request.pictured_type.__name__,
                 },
-                stream=True,
+                stream = True,
             )
             response.raise_for_status()
             image = Image.open(
@@ -78,14 +78,14 @@ class ImageClient(ImageLoader):
         if imageables_executor is not None and not allow_local_fallback:
             logging.warning('separate executor only required when allow_local_fallback is True')
 
-        super().__init__(image_cache_size=image_cache_size)
+        super().__init__(image_cache_size = image_cache_size)
 
         self._url = 'http://' + url if not url.startswith('http') else url
         self._executor = (
             executor
             if executor is isinstance(executor, Executor) else
             ThreadPoolExecutor(
-                max_workers=executor if isinstance(executor, int) else 8
+                max_workers = executor if isinstance(executor, int) else 8
             )
         )
 
@@ -93,7 +93,7 @@ class ImageClient(ImageLoader):
             executor
             if executor is isinstance(executor, Executor) else
             ThreadPoolExecutor(
-                max_workers=executor if isinstance(executor, int) else 4
+                max_workers = executor if isinstance(executor, int) else 4
             )
         ) if allow_local_fallback else None
 
@@ -110,7 +110,7 @@ class ImageClient(ImageLoader):
             try:
                 return self.load_image_from_disk(image_request.path)
             except ImageFetchException:
-                image_request = image_request.spawn(allow_disk_cached=False)
+                image_request = image_request.spawn(allow_disk_cached = False)
 
         if self._use_scryfall_when_available and issubclass(image_request.pictured_type, Printing):
             return pipeline.get_pipeline(image_request).get_image(image_request, self)
@@ -126,8 +126,8 @@ class ImageClient(ImageLoader):
     def _get_image(self, image_request: ImageRequest = None) -> Promise[Image.Image]:
         if not self._allow_save_to_disk or not self._allow_load_from_disk:
             image_request = image_request.spawn(
-                save=False if not self._allow_save_to_disk else image_request.save,
-                allow_disk_cached=False if not self._allow_load_from_disk else image_request.allow_disk_cached,
+                save = False if not self._allow_save_to_disk else image_request.save,
+                allow_disk_cached = False if not self._allow_load_from_disk else image_request.allow_disk_cached,
             )
         return Promise.resolve(
             (
@@ -136,3 +136,8 @@ class ImageClient(ImageLoader):
                 self._executor
             ).submit(self._open_image, image_request)
         )
+
+    def stop(self) -> None:
+        if self._imageables_executor is not None:
+            self._imageables_executor.shutdown(wait = False)
+        self._executor.shutdown(wait = False)
