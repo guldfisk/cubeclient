@@ -1103,13 +1103,13 @@ class LimitedPool(RemoteModel):
         pool_id: t.Union[str, int],
         user: User,
         client: ApiClient,
-        deck: t.Union[LimitedDeck, int] = None,
+        decks: t.Sequence[t.Union[LimitedDeck, int]] = (),
         session: t.Optional[LimitedSession] = None,
         pool: t.Optional[Cube] = None,
     ):
         super().__init__(pool_id, client)
         self._user = user
-        self._deck = deck
+        self._decks = decks
         self._pool = pool
         self._session = session
 
@@ -1121,18 +1121,18 @@ class LimitedPool(RemoteModel):
             pool_id = remote['id'],
             user = User.deserialize(remote['user'], client),
             client = client,
-            deck = (
-                LimitedDeck.deserialize(remote['deck'], client)
-                if remote['deck'] and not isinstance(remote['deck'], int) else
-                None
-            ),
+            decks = [
+                deck if isinstance(deck, int) else LimitedDeck.deserialize(deck, client)
+                for deck in
+                remote['decks']
+            ],
             session = LimitedSession.deserialize(remote['session'], client) if 'session' in remote else None,
             pool = RawStrategy(client.db).deserialize(Cube, remote['pool']) if 'pool' in remote else None,
         )
 
     def _fetch(self) -> None:
         pool = self._api_client.synchronous.limited_pool(self._id)
-        self._deck = pool._deck
+        self._decks = pool._decks
         self._pool = pool._pool
         self._session = pool._session
         self._fetched_full = True
@@ -1142,10 +1142,14 @@ class LimitedPool(RemoteModel):
         return self._user
 
     @property
-    def deck(self) -> t.Optional[LimitedDeck]:
-        if self._deck is None and not self._fetched_full:
+    def decks(self) -> t.Sequence[LimitedDeck]:
+        if self._decks and isinstance(self._decks[0], int) and not self._fetched_full:
             self._fetch()
-        return self._deck
+        return self._decks
+
+    @property
+    def deck(self) -> t.Optional[LimitedDeck]:
+        return None if not self._decks else self._decks[-1]
 
     @property
     def pool(self) -> Cube:
