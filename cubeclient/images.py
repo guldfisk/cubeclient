@@ -14,7 +14,8 @@ from yeetlong.taskawaiter import TaskAwaiter, EventWithValue
 from mtgorp.models.interfaces import Printing
 
 from mtgimg import pipeline
-from mtgimg.interface import ImageLoader, ImageRequest, ImageFetchException, Imageable
+from mtgimg.interface import ImageRequest, ImageFetchException, Imageable
+from mtgimg.base import BaseImageLoader
 
 
 class ClientFetcher(object):
@@ -61,7 +62,7 @@ class ClientFetcher(object):
         return cls._fetch_image(url, image_request, event)
 
 
-class ImageClient(ImageLoader):
+class ImageClient(BaseImageLoader):
 
     def __init__(
         self,
@@ -90,10 +91,10 @@ class ImageClient(ImageLoader):
         )
 
         self._imageables_executor = (
-            executor
-            if executor is isinstance(executor, Executor) else
+            imageables_executor
+            if executor is isinstance(imageables_executor, Executor) else
             ThreadPoolExecutor(
-                max_workers = executor if isinstance(executor, int) else 4
+                max_workers = executor if isinstance(imageables_executor, int) else 4
             )
         ) if allow_local_fallback else None
 
