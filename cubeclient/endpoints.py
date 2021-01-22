@@ -19,18 +19,18 @@ from mtgorp.models.serilization.strategies.jsonid import JsonId
 from mtgorp.models.serilization.strategies.raw import RawStrategy
 
 from magiccube.collections.cube import Cube
+from magiccube.collections.infinites import Infinites
 from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
 from magiccube.collections.nodecollection import NodeCollection, GroupMap
 from magiccube.update.cubeupdate import VerboseCubePatch
-from magiccube.collections.infinites import Infinites
 
 from cubeclient import models
 from cubeclient.models import (
     PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility, LimitedPool, P, LimitedSession,
     LimitedDeck, User,
     CubeRelease,
-    AsyncClient, StaticPaginationResult, R, DynamicPaginatedResponse, DbInfo, BaseClient
+    AsyncClient, StaticPaginationResult, R, DynamicPaginatedResponse, DbInfo, BaseClient, Tournament, ScheduledMatch
 )
 
 
@@ -409,6 +409,53 @@ class BaseNativeApiClient(models.ApiClient):
             self,
         )
 
+    def limited_deck(self, deck_id: t.Union[str, int]) -> LimitedDeck:
+        return LimitedDeck.deserialize(
+            self._make_request(f'limited/deck/{deck_id}'),
+            self,
+        )
+
+    def tournament(self, tournament_id: t.Union[str, int]) -> Tournament:
+        return Tournament.deserialize(
+            self._make_request(f'tournaments/{tournament_id}'),
+            self,
+        )
+
+    def scheduled_match(self, match_id: t.Union[str, int]) -> ScheduledMatch:
+        return ScheduledMatch.deserialize(
+            self._make_request(f'tournaments/scheduled-matches/{match_id}'),
+            self,
+        )
+
+    def _scheduled_matches(
+        self,
+        user: t.Union[str, int, User],
+        offset: int = 0,
+        limit: int = 10,
+    ):
+        return self._make_request(
+            'tournaments/users/{}/scheduled-matches'.format(
+                user.id
+                if isinstance(user, User) else
+                user
+            ),
+            offset = offset,
+            limit = limit,
+        )
+
+    def scheduled_matches(
+        self,
+        user: t.Union[str, int, User],
+        offset: int = 0,
+        limit: int = 10,
+    ) -> PaginatedResponse[ScheduledMatch]:
+        return self._get_paginated_response(
+            lambda _offset, _limit: self._scheduled_matches(user, _offset, _limit),
+            lambda remote: ScheduledMatch.deserialize(remote, self),
+            offset,
+            limit,
+        )
+
 
 class NativeApiClient(BaseNativeApiClient):
 
@@ -472,6 +519,14 @@ class NativeApiClient(BaseNativeApiClient):
         ascending: bool = False,
     ) -> DynamicPaginatedResponse[LimitedSession]:
         return super().limited_sessions(offset, limit, filters = filters, sort_key = sort_key, ascending = ascending)
+
+    def scheduled_matches(
+        self,
+        user: t.Union[str, int, User],
+        offset: int = 0,
+        limit: int = 10,
+    ) -> DynamicPaginatedResponse[ScheduledMatch]:
+        return super().scheduled_matches(user, offset, limit)
 
 
 class StaticNativeApiClient(BaseNativeApiClient):
@@ -537,6 +592,14 @@ class StaticNativeApiClient(BaseNativeApiClient):
         ascending: bool = False,
     ) -> StaticPaginationResult[LimitedSession]:
         return super().limited_sessions(offset, limit, filters = filters, sort_key = sort_key, ascending = ascending)
+
+    def scheduled_matches(
+        self,
+        user: t.Union[str, int, User],
+        offset: int = 0,
+        limit: int = 10,
+    ) -> StaticPaginationResult[ScheduledMatch]:
+        return super().scheduled_matches(user, offset, limit)
 
 
 class _AsyncMeta(ABCMeta):
@@ -615,7 +678,7 @@ class AsyncNativeApiClient(AsyncClient, metaclass = _AsyncMeta):
         )
 
     @property
-    def synchronous(self) -> BaseClient:
+    def synchronous(self) -> StaticNativeApiClient:
         return self._wrapping
 
     @property

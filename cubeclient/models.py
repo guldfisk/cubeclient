@@ -1,25 +1,26 @@
 from __future__ import annotations
 
+import datetime
 import threading
 import typing as t
-
 from abc import ABC, abstractmethod
-import datetime
 from enum import Enum
 
 from promise import Promise
 
-from mtgorp.models.interfaces import Expansion, Cardboard, Printing
-from mtgorp.models.serilization.strategies.raw import RawStrategy
 from mtgorp.db.database import CardDatabase
 from mtgorp.models.collections.deck import Deck
+from mtgorp.models.interfaces import Expansion, Cardboard, Printing
+from mtgorp.models.serilization.strategies.raw import RawStrategy
+from mtgorp.models.tournaments import tournaments as to
+from mtgorp.models.tournaments.matches import MatchType
 
 from magiccube.collections.cube import Cube
+from magiccube.collections.infinites import Infinites
 from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
-from magiccube.update.cubeupdate import VerboseCubePatch
-from magiccube.collections.infinites import Infinites
 from magiccube.collections.nodecollection import NodeCollection, GroupMap
+from magiccube.update.cubeupdate import VerboseCubePatch
 
 
 R = t.TypeVar('R')
@@ -184,7 +185,27 @@ class ApiClient(BaseClient):
         pass
 
     @abstractmethod
+    def limited_deck(self, deck_id: t.Union[str, int]) -> LimitedDeck:
+        pass
+
+    @abstractmethod
     def upload_limited_deck(self, pool_id: t.Union[str, int], name: str, deck: Deck) -> LimitedDeck:
+        pass
+
+    @abstractmethod
+    def tournament(self, tournament_id: t.Union[str, int]) -> Tournament:
+        pass
+
+    @abstractmethod
+    def scheduled_match(self, match_id: t.Union[str, int]) -> ScheduledMatch:
+        pass
+
+    @abstractmethod
+    def scheduled_matches(
+        self, user: t.Union[str, int, User],
+        offset: int = 0,
+        limit: int = 10,
+    ) -> PaginatedResponse[ScheduledMatch]:
         pass
 
 
@@ -286,7 +307,27 @@ class AsyncClient(BaseClient):
         pass
 
     @abstractmethod
+    def limited_deck(self, deck_id: t.Union[str, int]) -> Promise[LimitedDeck]:
+        pass
+
+    @abstractmethod
     def upload_limited_deck(self, pool_id: t.Union[str, int], name: str, deck: Deck) -> Promise[LimitedDeck]:
+        pass
+
+    @abstractmethod
+    def tournament(self, tournament_id: t.Union[str, int]) -> Promise[Tournament]:
+        pass
+
+    @abstractmethod
+    def scheduled_match(self, match_id: t.Union[str, int]) -> Promise[ScheduledMatch]:
+        pass
+
+    @abstractmethod
+    def scheduled_matches(
+        self, user: t.Union[str, int, User],
+        offset: int = 0,
+        limit: int = 10,
+    ) -> Promise[PaginatedResponse[ScheduledMatch]]:
         pass
 
 
@@ -1065,13 +1106,15 @@ class LimitedDeck(RemoteModel):
         deck_id: t.Union[str, int],
         name: str,
         created_at: datetime.datetime,
-        deck: Deck,
+        user: User,
         client: ApiClient,
+        deck: t.Optional[Deck],
     ):
         super().__init__(deck_id, client)
         self._name = name
         self._created_at = created_at
         self._deck = deck
+        self._user = user
 
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> LimitedDeck:
@@ -1079,7 +1122,8 @@ class LimitedDeck(RemoteModel):
             deck_id = remote['id'],
             name = remote['name'],
             created_at = datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT),
-            deck = RawStrategy(client.db).deserialize(Deck, remote['deck']),
+            deck = RawStrategy(client.db).deserialize(Deck, remote['deck']) if 'deck' in remote else None,
+            user = User.deserialize(remote['user'], client = client),
             client = client,
         )
 
@@ -1093,7 +1137,13 @@ class LimitedDeck(RemoteModel):
 
     @property
     def deck(self) -> Deck:
+        if self._deck is None:
+            self._deck = self._api_client.limited_deck(self._id).deck
         return self._deck
+
+    @property
+    def user(self) -> User:
+        return self._user
 
 
 class LimitedPool(RemoteModel):
@@ -1162,3 +1212,336 @@ class LimitedPool(RemoteModel):
         if self._session is None:
             self._fetch()
         return self._session
+
+
+class Tournament(RemoteModel):
+    class TournamentState(Enum):
+        ONGOING = 0
+        FINISHED = 1
+        CANCELED = 2
+
+    def __init__(
+        self,
+        tournament_id: int,
+        state: TournamentState,
+        name: str,
+        tournament_type: t.Type[to.Tournament],
+        match_type: MatchType,
+        participants: t.FrozenSet[TournamentParticipant],
+        client: ApiClient,
+        finished_at: t.Optional[datetime.datetime] = None,
+        rounds: t.Optional[t.Sequence[TournamentRound]] = None,
+
+    ):
+        super().__init__(tournament_id, client)
+        self._state = state
+        self._name = name
+        self._tournament_type = tournament_type
+        self._match_type = match_type
+        self._participants = participants
+        self._rounds = rounds
+        self._finished_at = finished_at
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> Tournament:
+        match_type = MatchType.matches_map[remote['match_type']['name']]
+        tournament = cls(
+            tournament_id = remote['id'],
+            state = cls.TournamentState[remote['state']],
+            name = remote['name'],
+            tournament_type = to.Tournament.tournaments_map[remote['tournament_type']],
+            match_type = match_type(
+                **match_type.options_schema.deserialize_raw(
+                    remote['match_type']
+                )
+            ),
+            participants = frozenset(
+                TournamentParticipant.deserialize(
+                    participant,
+                    client = client,
+                ) for participant in
+                remote['participants']
+            ),
+            rounds = [
+                TournamentRound.deserialize(
+                    _round,
+                    client = client,
+                ) for _round in
+                remote['rounds']
+            ] if isinstance(remote.get('rounds'), list) else None,
+            finished_at = (
+                datetime.datetime.strptime(remote['finished_at'], DATETIME_FORMAT)
+                if remote['finished_at'] else
+                None
+            ),
+            client = client,
+        )
+
+        if tournament._rounds:
+            for _round in tournament._rounds:
+                for match in _round.matches:
+                    match._tournament = tournament
+
+        return tournament
+
+    @property
+    def state(self) -> TournamentState:
+        return self._state
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def tournament_type(self) -> t.Type[to.Tournament]:
+        return self._tournament_type
+
+    @property
+    def match_type(self) -> MatchType:
+        return self._match_type
+
+    @property
+    def participants(self) -> t.FrozenSet[TournamentParticipant]:
+        return self._participants
+
+    @property
+    def rounds(self) -> t.Sequence[TournamentRound]:
+        if self._rounds is None:
+            self._rounds = self._api_client.tournament(self._id)._rounds
+        return self._rounds
+
+    @property
+    def finished_at(self) -> t.Optional[datetime.datetime]:
+        return self._finished_at
+
+
+class TournamentParticipant(RemoteModel):
+
+    def __init__(
+        self,
+        participant_id: int,
+        deck: LimitedDeck,
+        player: t.Optional[User],
+        seed: float,
+        client: ApiClient,
+    ):
+        super().__init__(participant_id, client)
+        self._deck = deck
+        self._player = player
+        self._seed = seed
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> TournamentParticipant:
+        return cls(
+            participant_id = remote['id'],
+            deck = LimitedDeck.deserialize(remote['deck'], client = client),
+            player = User.deserialize(
+                remote['player'],
+                client = client,
+            ) if remote.get('player') else None,
+            seed = remote['seed'],
+            client = client,
+        )
+
+    @property
+    def deck(self) -> LimitedDeck:
+        return self._deck
+
+    @property
+    def player(self) -> t.Optional[User]:
+        return self._player
+
+    @property
+    def seed(self) -> float:
+        return self._seed
+
+    @property
+    def tag_line(self):
+        if self._player is None:
+            return f'{self._deck.name} ({self._deck.user.username}'
+        return f'{self._player.username} - {self._deck.name}'
+
+
+class TournamentRound(RemoteModel):
+
+    def __init__(
+        self,
+        round_id: int,
+        index: int,
+        matches: t.FrozenSet[ScheduledMatch],
+        client: ApiClient,
+    ):
+        super().__init__(round_id, client)
+        self._index = index
+        self._matches = matches
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> TournamentRound:
+        return cls(
+            round_id = remote['id'],
+            index = remote['index'],
+            matches = frozenset(
+                ScheduledMatch.deserialize(
+                    match,
+                    client = client,
+                ) for match in
+                remote['matches']
+            ),
+            client = client,
+        )
+
+    @property
+    def matches(self) -> t.FrozenSet[ScheduledMatch]:
+        return self._matches
+
+
+class ScheduledMatch(RemoteModel):
+
+    def __init__(
+        self,
+        match_id: int,
+        seats: t.FrozenSet[ScheduledSeat],
+        result: t.Optional[MatchResult],
+        client: ApiClient,
+        tournament: t.Optional[Tournament] = None,
+        tournament_round: t.Optional[int] = None,
+    ):
+        super().__init__(match_id, client)
+        self._seats = seats
+        self._result = result
+        self._tournament = tournament
+        self._round = tournament_round
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> ScheduledMatch:
+        return cls(
+            match_id = remote['id'],
+            seats = frozenset(
+                ScheduledSeat.deserialize(
+                    seat,
+                    client = client,
+                ) for seat in
+                remote['seats']
+            ),
+            result = MatchResult.deserialize(
+                remote['result'],
+                client = client,
+            ) if remote.get('result') else None,
+            tournament = Tournament.deserialize(
+                remote['tournament'],
+                client = client,
+            ) if 'tournament' in remote else
+            None,
+            tournament_round = remote.get('round'),
+            client = client,
+        )
+
+    @property
+    def tournament(self) -> Tournament:
+        if self._tournament is None:
+            self._tournament = self._api_client.scheduled_match(self._id).tournament
+        return self._tournament
+
+    @property
+    def seats(self) -> t.FrozenSet[ScheduledSeat]:
+        return self._seats
+
+    @property
+    def result(self) -> t.Optional[MatchResult]:
+        return self._result
+
+    @property
+    def round(self):
+        if self._round is None:
+            c = 0
+            for _round in self.tournament.rounds:
+                if self in _round.matches:
+                    break
+                c += 1
+            self._round = c
+        return self._round
+
+
+class MatchResult(RemoteModel):
+
+    def __init__(
+        self,
+        result_id: int,
+        draws: int,
+        client: ApiClient,
+    ):
+        super().__init__(result_id, client)
+        self._draws = draws
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> MatchResult:
+        return cls(
+            result_id = remote['id'],
+            draws = remote['draws'],
+            client = client,
+        )
+
+    @property
+    def draws(self) -> int:
+        return self._draws
+
+
+class ScheduledSeat(RemoteModel):
+
+    def __init__(
+        self,
+        seat_id: int,
+        participant: TournamentParticipant,
+        result: t.Optional[SeatResult],
+        client: ApiClient,
+    ):
+        super().__init__(seat_id, client)
+        self._participant = participant
+        self._result = result
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> ScheduledSeat:
+        return cls(
+            seat_id = remote['id'],
+            participant = TournamentParticipant.deserialize(
+                remote['participant'],
+                client = client,
+            ),
+            result = SeatResult.deserialize(
+                remote['result'],
+                client = client,
+            ) if remote.get('result') else None,
+            client = client,
+        )
+
+    @property
+    def participant(self) -> TournamentParticipant:
+        return self._participant
+
+    @property
+    def result(self) -> t.Optional[SeatResult]:
+        return self._result
+
+
+class SeatResult(RemoteModel):
+
+    def __init__(
+        self,
+        result_id: int,
+        wins: int,
+        client: ApiClient,
+    ):
+        super().__init__(result_id, client)
+        self._wins = wins
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> SeatResult:
+        return cls(
+            result_id = remote['id'],
+            wins = remote['wins'],
+            client = client,
+        )
+
+    @property
+    def wins(self) -> int:
+        return self._wins
