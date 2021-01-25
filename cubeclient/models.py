@@ -1228,10 +1228,10 @@ class Tournament(RemoteModel):
         tournament_type: t.Type[to.Tournament],
         match_type: MatchType,
         participants: t.FrozenSet[TournamentParticipant],
+        created_at: datetime.datetime,
         client: ApiClient,
         finished_at: t.Optional[datetime.datetime] = None,
         rounds: t.Optional[t.Sequence[TournamentRound]] = None,
-
     ):
         super().__init__(tournament_id, client)
         self._state = state
@@ -1239,6 +1239,7 @@ class Tournament(RemoteModel):
         self._tournament_type = tournament_type
         self._match_type = match_type
         self._participants = participants
+        self._created_at = created_at
         self._rounds = rounds
         self._finished_at = finished_at
 
@@ -1262,6 +1263,7 @@ class Tournament(RemoteModel):
                 ) for participant in
                 remote['participants']
             ),
+            created_at = datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT),
             rounds = [
                 TournamentRound.deserialize(
                     _round,
@@ -1303,6 +1305,10 @@ class Tournament(RemoteModel):
     @property
     def participants(self) -> t.FrozenSet[TournamentParticipant]:
         return self._participants
+
+    @property
+    def created_at(self) -> datetime.datetime:
+        return self._created_at
 
     @property
     def rounds(self) -> t.Sequence[TournamentRound]:
