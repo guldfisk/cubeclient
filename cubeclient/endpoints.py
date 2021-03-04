@@ -30,7 +30,7 @@ from cubeclient.models import (
     PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility, LimitedPool, P, LimitedSession,
     LimitedDeck, User,
     CubeRelease,
-    AsyncClient, StaticPaginationResult, R, DynamicPaginatedResponse, DbInfo, BaseClient, Tournament, ScheduledMatch
+    AsyncClient, StaticPaginationResult, R, DynamicPaginatedResponse, DbInfo, Tournament, ScheduledMatch, RatingMap
 )
 
 
@@ -145,28 +145,15 @@ class BaseNativeApiClient(models.ApiClient):
             self,
         )
 
-    def _deserialize_versioned_cube(self, remote) -> VersionedCube:
-        return VersionedCube(
-            model_id = remote['id'],
-            name = remote['name'],
-            created_at = datetime.datetime.strptime(remote['created_at'], self._DATETIME_FORMAT),
-            description = remote['description'],
-            releases = [
-                CubeRelease.deserialize(release, self)
-                for release in
-                remote['releases']
-            ],
-            client = self,
-        )
-
     def _get_versioned_cubes(self, offset: int, limit: int) -> t.List[t.Any]:
         return self._make_request('versioned-cubes', offset = offset, limit = limit)
 
     def versioned_cube(self, versioned_cube_id: t.Union[str, int]) -> VersionedCube:
-        return self._deserialize_versioned_cube(
+        return VersionedCube.deserialize(
             self._make_request(
                 f'versioned-cubes/{versioned_cube_id}'
-            )
+            ),
+            self,
         )
 
     def versioned_cubes(
@@ -180,7 +167,7 @@ class BaseNativeApiClient(models.ApiClient):
 
         self._versioned_cubes = self._get_paginated_response(
             self._get_versioned_cubes,
-            self._deserialize_versioned_cube,
+            lambda remote: VersionedCube.deserialize(remote, self),
             offset,
             limit,
         )
@@ -237,11 +224,12 @@ class BaseNativeApiClient(models.ApiClient):
                 patch
             )
         )
+        strategy = self.inflator
         return MetaCube(
-            cube = RawStrategy(self._db).deserialize(Cube, result['cube']),
-            nodes = RawStrategy(self._db).deserialize(NodeCollection, result['nodes']['constrained_nodes']),
-            groups = RawStrategy(self._db).deserialize(GroupMap, result['group_map']),
-            infinites = RawStrategy(self._db()).deserialize(Infinites, result['infinites'])
+            cube = strategy.deserialize(Cube, result['cube']),
+            nodes = strategy.deserialize(NodeCollection, result['nodes']['constrained_nodes']),
+            groups = strategy.deserialize(GroupMap, result['group_map']),
+            infinites = strategy.deserialize(Infinites, result['infinites'])
         )
 
     def verbose_patch(self, patch: t.Union[PatchModel, int, str]) -> VerboseCubePatch:
@@ -454,6 +442,12 @@ class BaseNativeApiClient(models.ApiClient):
             lambda remote: ScheduledMatch.deserialize(remote, self),
             offset,
             limit,
+        )
+
+    def rankings_for_versioned_cube(self, cube_id: t.Union[str, int]) -> RatingMap:
+        return RatingMap.deserialize(
+            self._make_request(f'ratings/versioned-cube/{cube_id}'),
+            self,
         )
 
 

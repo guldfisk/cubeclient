@@ -8,6 +8,9 @@ from enum import Enum
 
 from promise import Promise
 
+from magiccube.collections.cubeable import (
+    CardboardCubeable, Cubeable, deserialize_cardboard_cubeable, deserialize_cubeable
+)
 from mtgorp.db.database import CardDatabase
 from mtgorp.models.collections.deck import Deck
 from mtgorp.models.interfaces import Expansion, Cardboard, Printing
@@ -55,6 +58,10 @@ class BaseClient(ABC):
     def user(self) -> t.Optional[User]:
         pass
 
+    @property
+    def inflator(self) -> RawStrategy:
+        pass
+
 
 class ApiClient(BaseClient):
 
@@ -63,6 +70,7 @@ class ApiClient(BaseClient):
         self._db = db
         self._token = token
         self._user = None
+        self._inflator: t.Optional[RawStrategy] = None
 
         self._user_lock = threading.Lock()
 
@@ -88,6 +96,12 @@ class ApiClient(BaseClient):
     def user(self) -> t.Optional[User]:
         with self._user_lock:
             return self._user
+
+    @property
+    def inflator(self) -> RawStrategy:
+        if self._inflator is None:
+            self._inflator = RawStrategy(self._db)
+        return self._inflator
 
     @abstractmethod
     def download_db_from_remote(self, target: t.Union[t.BinaryIO, str]) -> None:
@@ -206,6 +220,10 @@ class ApiClient(BaseClient):
         offset: int = 0,
         limit: int = 10,
     ) -> PaginatedResponse[ScheduledMatch]:
+        pass
+
+    @abstractmethod
+    def rankings_for_versioned_cube(self, cube_id: t.Union[str, int]) -> RatingMap:
         pass
 
 
@@ -328,6 +346,10 @@ class AsyncClient(BaseClient):
         offset: int = 0,
         limit: int = 10,
     ) -> Promise[PaginatedResponse[ScheduledMatch]]:
+        pass
+
+    @abstractmethod
+    def rankings_for_versioned_cube(self, cube_id: t.Union[str, int]) -> Promise[RatingMap]:
         pass
 
 
@@ -578,8 +600,8 @@ class VersionedCube(RemoteModel):
         name: str,
         created_at: datetime.datetime,
         description: str,
-        releases: t.List[CubeRelease],
         client: ApiClient,
+        releases: t.Optional[t.List[CubeRelease]] = None,
     ):
         super().__init__(model_id, client)
         self._name = name
@@ -588,6 +610,26 @@ class VersionedCube(RemoteModel):
         self._releases = releases
 
         self._patches: t.Optional[PaginatedResponse[PatchModel]] = None
+
+    def _fetch(self) -> None:
+        remote = self._api_client.synchronous.versioned_cube(self.id)
+        self._releases = remote._releases
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> VersionedCube:
+        return cls(
+            model_id = remote['id'],
+            name = remote['name'],
+            created_at = datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT),
+            description = remote['description'],
+            releases = [
+                CubeRelease.deserialize(release, client)
+                for release in
+                remote['releases']
+            ] if 'releases' in remote else
+            None,
+            client = client,
+        )
 
     @property
     def name(self) -> str:
@@ -603,6 +645,8 @@ class VersionedCube(RemoteModel):
 
     @property
     def releases(self) -> t.Sequence[CubeRelease]:
+        if self._releases is None:
+            self._fetch()
         return self._releases
 
     @property
@@ -628,6 +672,7 @@ class CubeRelease(RemoteModel):
         created_at: t.Optional[datetime.datetime] = None,
         intended_size: t.Optional[int] = None,
         cube: t.Optional[Cube] = None,
+        versioned_cube: t.Optional[VersionedCube] = None,
         constrained_nodes: t.Optional[NodeCollection] = None,
         group_map: t.Optional[GroupMap] = None,
         infinites: t.Optional[Infinites] = None,
@@ -637,17 +682,19 @@ class CubeRelease(RemoteModel):
         self._name = name
         self._intended_size = intended_size
         self._cube = cube
+        self._versioned_cube = versioned_cube
         self._constrained_nodes = constrained_nodes
         self._group_map = group_map
         self._infinites = infinites
 
     def _fetch(self) -> None:
         release = self._api_client.synchronous.release(self)
-        self._created_at = release.created_at
-        self._intended_size = release.intended_size
-        self._cube = release.cube
-        self._constrained_nodes = release.constrained_nodes
-        self._group_map = release.group_map
+        self._created_at = release._created_at
+        self._intended_size = release._intended_size
+        self._cube = release._cube
+        self._constrained_nodes = release._constrained_nodes
+        self._group_map = release._group_map
+        self._versioned_cube = release._versioned_cube
 
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> CubeRelease:
@@ -667,6 +714,11 @@ class CubeRelease(RemoteModel):
                     remote['cube']
                 )
                 if 'cube' in remote else
+                None
+            ),
+            versioned_cube = (
+                VersionedCube.deserialize(remote['versioned_cube'], client)
+                if 'versioned_cube' in remote else
                 None
             ),
             constrained_nodes = (
@@ -716,6 +768,12 @@ class CubeRelease(RemoteModel):
         if self._cube is None:
             self._fetch()
         return self._cube
+
+    @property
+    def versioned_cube(self) -> VersionedCube:
+        if self._versioned_cube is None:
+            self._fetch()
+        return self._versioned_cube
 
     @property
     def constrained_nodes(self) -> NodeCollection:
@@ -1551,3 +1609,94 @@ class SeatResult(RemoteModel):
     @property
     def wins(self) -> int:
         return self._wins
+
+
+class CardboardCubeableRating(RemoteModel):
+
+    def __init__(
+        self,
+        rating_id: int,
+        cardboard_cubeable: CardboardCubeable,
+        example_cubeable: Cubeable,
+        rating: int,
+        client: ApiClient,
+    ):
+        super().__init__(rating_id, client)
+        self._cardboard_cubeable = cardboard_cubeable
+        self._example_cubeable = example_cubeable
+        self._rating = rating
+
+    @property
+    def cardboard_cubeable(self) -> CardboardCubeable:
+        return self._cardboard_cubeable
+
+    @property
+    def example_cubeable(self) -> Cubeable:
+        return self._example_cubeable
+
+    @property
+    def rating(self) -> int:
+        return self._rating
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> CardboardCubeableRating:
+        return cls(
+            rating_id = remote['id'],
+            cardboard_cubeable = deserialize_cardboard_cubeable(remote['cardboard_cubeable'], client.inflator),
+            example_cubeable = deserialize_cubeable(remote['example_cubeable'], client.inflator),
+            rating = remote['rating'],
+            client = client,
+        )
+
+
+class RatingMap(RemoteModel):
+
+    def __init__(
+        self,
+        map_id: int,
+        release: CubeRelease,
+        ratings: t.Sequence[CardboardCubeableRating],
+        created_at: datetime.datetime,
+        client: ApiClient,
+    ):
+        super().__init__(map_id, client)
+        self._release = release
+        self._ratings = ratings
+        self._created_at = created_at
+
+        self._map: t.Optional[t.Mapping[CardboardCubeable, CardboardCubeableRating]] = None
+
+    @property
+    def release(self) -> CubeRelease:
+        return self._release
+
+    @property
+    def ratings(self) -> t.Sequence[CardboardCubeableRating]:
+        return self._ratings
+
+    @property
+    def created_at(self) -> datetime.datetime:
+        return self._created_at
+
+    def __getitem__(self, item: CardboardCubeable) -> CardboardCubeableRating:
+        if self._map is None:
+            self._map = {
+                rating.cardboard_cubeable: rating
+                for rating in
+                self._ratings
+            }
+        return self._map[item]
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> RatingMap:
+        return cls(
+            map_id = remote['id'],
+            release = CubeRelease.deserialize(remote['release'], client),
+            ratings = [
+                CardboardCubeableRating.deserialize(cardboard_cubeable, client)
+                for cardboard_cubeable in
+                remote['ratings']
+            ],
+            created_at = datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT),
+            client = client,
+        )
