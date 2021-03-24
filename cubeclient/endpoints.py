@@ -444,9 +444,21 @@ class BaseNativeApiClient(models.ApiClient):
             limit,
         )
 
+    def ratings(self, ratings_id: t.Union[str, int]) -> RatingMap:
+        return RatingMap.deserialize(
+            self._make_request(f'ratings/{ratings_id}'),
+            self,
+        )
+
     def rankings_for_versioned_cube(self, cube_id: t.Union[str, int]) -> RatingMap:
         return RatingMap.deserialize(
             self._make_request(f'ratings/versioned-cube/{cube_id}'),
+            self,
+        )
+
+    def rankings_for_release(self, release_id: t.Union[str, int]) -> RatingMap:
+        return RatingMap.deserialize(
+            self._make_request(f'ratings/release/{release_id}'),
             self,
         )
 

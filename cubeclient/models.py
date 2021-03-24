@@ -223,7 +223,15 @@ class ApiClient(BaseClient):
         pass
 
     @abstractmethod
+    def ratings(self, ratings_id: t.Union[str, int]) -> RatingMap:
+        pass
+
+    @abstractmethod
     def rankings_for_versioned_cube(self, cube_id: t.Union[str, int]) -> RatingMap:
+        pass
+
+    @abstractmethod
+    def rankings_for_release(self, release_id: t.Union[str, int]) -> RatingMap:
         pass
 
 
@@ -349,7 +357,15 @@ class AsyncClient(BaseClient):
         pass
 
     @abstractmethod
+    def ratings(self, ratings_id: t.Union[str, int]) -> Promise[RatingMap]:
+        pass
+
+    @abstractmethod
     def rankings_for_versioned_cube(self, cube_id: t.Union[str, int]) -> Promise[RatingMap]:
+        pass
+
+    @abstractmethod
+    def rankings_for_release(self, release_id: t.Union[str, int]) -> Promise[RatingMap]:
         pass
 
 
@@ -1655,9 +1671,9 @@ class RatingMap(RemoteModel):
         self,
         map_id: int,
         release: CubeRelease,
-        ratings: t.Sequence[CardboardCubeableRating],
         created_at: datetime.datetime,
         client: ApiClient,
+        ratings: t.Optional[t.Sequence[CardboardCubeableRating]] = None,
     ):
         super().__init__(map_id, client)
         self._release = release
@@ -1672,6 +1688,8 @@ class RatingMap(RemoteModel):
 
     @property
     def ratings(self) -> t.Sequence[CardboardCubeableRating]:
+        if self._ratings is None:
+            self._ratings = self._api_client.synchronous.ratings(self._id)._ratings
         return self._ratings
 
     @property
@@ -1696,7 +1714,7 @@ class RatingMap(RemoteModel):
                 CardboardCubeableRating.deserialize(cardboard_cubeable, client)
                 for cardboard_cubeable in
                 remote['ratings']
-            ],
+            ] if 'ratings' in remote else None,
             created_at = datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT),
             client = client,
         )
