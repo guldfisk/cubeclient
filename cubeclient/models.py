@@ -1682,14 +1682,20 @@ class RatingMap(RemoteModel):
 
         self._map: t.Optional[t.Mapping[CardboardCubeable, CardboardCubeableRating]] = None
 
+    def _inflate(self) -> None:
+        self._ratings = self._api_client.synchronous.ratings(self._id)._ratings
+
+    def inflate(self) -> None:
+        if self._ratings is None:
+            self._inflate()
+
     @property
     def release(self) -> CubeRelease:
         return self._release
 
     @property
     def ratings(self) -> t.Sequence[CardboardCubeableRating]:
-        if self._ratings is None:
-            self._ratings = self._api_client.synchronous.ratings(self._id)._ratings
+        self.inflate()
         return self._ratings
 
     @property
@@ -1698,6 +1704,7 @@ class RatingMap(RemoteModel):
 
     def __getitem__(self, item: CardboardCubeable) -> CardboardCubeableRating:
         if self._map is None:
+            self.inflate()
             self._map = {
                 rating.cardboard_cubeable: rating
                 for rating in
