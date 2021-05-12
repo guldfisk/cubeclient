@@ -19,18 +19,19 @@ from mtgorp.models.serilization.strategies.jsonid import JsonId
 from mtgorp.models.serilization.strategies.raw import RawStrategy
 
 from magiccube.collections.cube import Cube
+from magiccube.collections.cubeable import CardboardCubeable
 from magiccube.collections.infinites import Infinites
 from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
 from magiccube.collections.nodecollection import NodeCollection, GroupMap
+from magiccube.laps.traps.tree.printingtree import CardboardNodeChild
 from magiccube.update.cubeupdate import VerboseCubePatch
 
 from cubeclient import models
 from cubeclient.models import (
     PaginatedResponse, VersionedCube, PatchModel, DistributionPossibility, LimitedPool, P, LimitedSession,
-    LimitedDeck, User,
-    CubeRelease,
-    AsyncClient, StaticPaginationResult, R, DynamicPaginatedResponse, DbInfo, Tournament, ScheduledMatch, RatingMap
+    LimitedDeck, User, CubeRelease, AsyncClient, StaticPaginationResult, R, DynamicPaginatedResponse, DbInfo,
+    Tournament, ScheduledMatch, RatingMap, RatingPoint, NodeRatingPoint
 )
 
 
@@ -444,19 +445,55 @@ class BaseNativeApiClient(models.ApiClient):
             limit,
         )
 
+    def rating_history_for_cardboard_cubeable(
+        self,
+        release_id: t.Union[str, int],
+        cubeable: t.Union[str, CardboardCubeable],
+    ) -> t.Sequence[RatingPoint]:
+        return [
+            RatingPoint.deserialize(
+                point,
+                self,
+            )
+            for point in
+            self._make_request(
+                'ratings/history/'
+                f'{release_id}/'
+                f'{cubeable if isinstance(cubeable, str) else cubeable.id}'
+            )
+        ]
+
+    def rating_history_for_node(
+        self,
+        release_id: t.Union[str, int],
+        node: t.Union[str, CardboardNodeChild],
+    ) -> t.Sequence[NodeRatingPoint]:
+        return [
+            NodeRatingPoint.deserialize(
+                point,
+                self,
+            )
+            for point in
+            self._make_request(
+                'ratings/node-history/'
+                f'{release_id}/'
+                f'{node if isinstance(node, str) else node.id}'
+            )
+        ]
+
     def ratings(self, ratings_id: t.Union[str, int]) -> RatingMap:
         return RatingMap.deserialize(
             self._make_request(f'ratings/{ratings_id}'),
             self,
         )
 
-    def rankings_for_versioned_cube(self, cube_id: t.Union[str, int]) -> RatingMap:
+    def ratings_for_versioned_cube(self, cube_id: t.Union[str, int]) -> RatingMap:
         return RatingMap.deserialize(
             self._make_request(f'ratings/versioned-cube/{cube_id}'),
             self,
         )
 
-    def rankings_for_release(self, release_id: t.Union[str, int]) -> RatingMap:
+    def ratings_for_release(self, release_id: t.Union[str, int]) -> RatingMap:
         return RatingMap.deserialize(
             self._make_request(f'ratings/release/{release_id}'),
             self,

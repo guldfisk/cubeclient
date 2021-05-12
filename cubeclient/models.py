@@ -4,6 +4,7 @@ import datetime
 import threading
 import typing as t
 from abc import ABC, abstractmethod
+from decimal import Decimal
 from enum import Enum
 
 from promise import Promise
@@ -23,6 +24,7 @@ from magiccube.collections.infinites import Infinites
 from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
 from magiccube.collections.nodecollection import NodeCollection, GroupMap
+from magiccube.laps.traps.tree.printingtree import CardboardNodeChild
 from magiccube.update.cubeupdate import VerboseCubePatch
 
 
@@ -223,15 +225,31 @@ class ApiClient(BaseClient):
         pass
 
     @abstractmethod
+    def rating_history_for_cardboard_cubeable(
+        self,
+        release_id: t.Union[str, int],
+        cubeable: t.Union[str, CardboardCubeable],
+    ) -> t.Sequence[RatingPoint]:
+        pass
+
+    @abstractmethod
+    def rating_history_for_node(
+        self,
+        release_id: t.Union[str, int],
+        node: t.Union[str, CardboardNodeChild],
+    ) -> t.Sequence[NodeRatingPoint]:
+        pass
+
+    @abstractmethod
     def ratings(self, ratings_id: t.Union[str, int]) -> RatingMap:
         pass
 
     @abstractmethod
-    def rankings_for_versioned_cube(self, cube_id: t.Union[str, int]) -> RatingMap:
+    def ratings_for_versioned_cube(self, cube_id: t.Union[str, int]) -> RatingMap:
         pass
 
     @abstractmethod
-    def rankings_for_release(self, release_id: t.Union[str, int]) -> RatingMap:
+    def ratings_for_release(self, release_id: t.Union[str, int]) -> RatingMap:
         pass
 
 
@@ -357,15 +375,31 @@ class AsyncClient(BaseClient):
         pass
 
     @abstractmethod
+    def rating_history_for_cardboard_cubeable(
+        self,
+        release_id: t.Union[str, int],
+        cubeable: t.Union[str, CardboardCubeable],
+    ) -> Promise[t.Sequence[RatingPoint]]:
+        pass
+
+    @abstractmethod
+    def rating_history_for_node(
+        self,
+        release_id: t.Union[str, int],
+        node: t.Union[str, CardboardNodeChild],
+    ) -> Promise[t.Sequence[NodeRatingPoint]]:
+        pass
+
+    @abstractmethod
     def ratings(self, ratings_id: t.Union[str, int]) -> Promise[RatingMap]:
         pass
 
     @abstractmethod
-    def rankings_for_versioned_cube(self, cube_id: t.Union[str, int]) -> Promise[RatingMap]:
+    def ratings_for_versioned_cube(self, cube_id: t.Union[str, int]) -> Promise[RatingMap]:
         pass
 
     @abstractmethod
-    def rankings_for_release(self, release_id: t.Union[str, int]) -> Promise[RatingMap]:
+    def ratings_for_release(self, release_id: t.Union[str, int]) -> Promise[RatingMap]:
         pass
 
 
@@ -1625,6 +1659,69 @@ class SeatResult(RemoteModel):
     @property
     def wins(self) -> int:
         return self._wins
+
+
+class RatingPoint(RemoteModel):
+
+    def __init__(
+        self,
+        rating_id: int,
+        rating: int,
+        rating_map: RatingMap,
+        client: ApiClient,
+    ):
+        super().__init__(rating_id, client)
+        self._rating = rating
+        self._rating_map = rating_map
+
+    @property
+    def rating(self) -> int:
+        return self._rating
+
+    @property
+    def rating_map(self) -> RatingMap:
+        return self._rating_map
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> RatingPoint:
+        return cls(
+            rating_id = remote['id'],
+            rating = remote['rating'],
+            rating_map = RatingMap.deserialize(remote['rating_map'], client),
+            client = client,
+        )
+
+
+class NodeRatingPoint(RatingPoint):
+
+    def __init__(
+        self,
+        rating_id: int,
+        rating: int,
+        weight: Decimal,
+        rating_map: RatingMap,
+        client: ApiClient,
+    ):
+        super().__init__(rating_id, rating, rating_map, client)
+        self._weight = weight
+
+    @property
+    def weight(self) -> Decimal:
+        return self._weight
+
+    @property
+    def rating_component(self) -> int:
+        return self._rating
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> NodeRatingPoint:
+        return cls(
+            rating_id = remote['id'],
+            rating = remote['rating_component'],
+            weight = Decimal(remote['weight']),
+            rating_map = RatingMap.deserialize(remote['rating_map'], client),
+            client = client,
+        )
 
 
 class CardboardCubeableRating(RemoteModel):
