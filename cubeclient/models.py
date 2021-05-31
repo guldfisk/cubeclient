@@ -10,7 +10,7 @@ from enum import Enum
 from promise import Promise
 
 from magiccube.collections.cubeable import (
-    CardboardCubeable, Cubeable, deserialize_cardboard_cubeable, deserialize_cubeable
+    CardboardCubeable, Cubeable, deserialize_cardboard_cubeable, deserialize_cubeable, deserialize_cardboard_node_child
 )
 from mtgorp.db.database import CardDatabase
 from mtgorp.models.collections.deck import Deck
@@ -1104,7 +1104,7 @@ class PoolSpecification(RemoteModel):
 
 
 class LimitedSession(RemoteModel):
-    class SealedSessionState(Enum):
+    class LimitedSessionState(Enum):
         DECK_BUILDING = 0
         PLAYING = 1
         FINISHED = 2
@@ -1116,7 +1116,7 @@ class LimitedSession(RemoteModel):
         game_type: str,
         game_format: str,
         players: t.AbstractSet[User],
-        state: SealedSessionState,
+        state: LimitedSessionState,
         open_decks: bool,
         open_pools: bool,
         created_at: datetime.datetime,
@@ -1145,7 +1145,7 @@ class LimitedSession(RemoteModel):
             name = remote['name'],
             game_type = remote['game_type'],
             players = {User.deserialize(player, client) for player in remote['players']},
-            state = cls.SealedSessionState[remote['state']],
+            state = cls.LimitedSessionState[remote['state']],
             open_decks = remote['open_decks'],
             open_pools = remote['open_pools'],
             game_format = remote['format'],
@@ -1177,7 +1177,7 @@ class LimitedSession(RemoteModel):
         return self._players
 
     @property
-    def state(self) -> SealedSessionState:
+    def state(self) -> LimitedSessionState:
         return self._state
 
     @property
@@ -1762,6 +1762,48 @@ class CardboardCubeableRating(RemoteModel):
         )
 
 
+class NodeRatingComponent(RemoteModel):
+
+    def __init__(
+        self,
+        rating_id: int,
+        node: CardboardNodeChild,
+        rating_component: int,
+        weight: Decimal,
+        client: ApiClient,
+    ):
+        super().__init__(rating_id, client)
+        self._node = node
+        self._rating_component = rating_component
+        self._weight = weight
+
+    @property
+    def node(self) -> CardboardNodeChild:
+        return self._node
+
+    @property
+    def weight(self) -> Decimal:
+        return self._weight
+
+    @property
+    def rating_component(self) -> int:
+        return self._rating_component
+    
+    @property
+    def rating(self) -> int:
+        return self._rating_component
+
+    @classmethod
+    def deserialize(cls, remote: t.Any, client: ApiClient) -> NodeRatingComponent:
+        return cls(
+            rating_id = remote['id'],
+            node = deserialize_cardboard_node_child(remote['node'], client.inflator),
+            rating_component = remote['rating_component'],
+            weight = Decimal(remote['weight']),
+            client = client,
+        )
+
+
 class RatingMap(RemoteModel):
 
     def __init__(
@@ -1771,16 +1813,20 @@ class RatingMap(RemoteModel):
         created_at: datetime.datetime,
         client: ApiClient,
         ratings: t.Optional[t.Sequence[CardboardCubeableRating]] = None,
+        node_components_ratings: t.Optional[t.Sequence[NodeRatingComponent]] = None,
     ):
         super().__init__(map_id, client)
         self._release = release
         self._ratings = ratings
+        self._node_ratings = node_components_ratings
         self._created_at = created_at
 
         self._map: t.Optional[t.Mapping[CardboardCubeable, CardboardCubeableRating]] = None
 
     def _inflate(self) -> None:
-        self._ratings = self._api_client.synchronous.ratings(self._id)._ratings
+        remote = self._api_client.synchronous.ratings(self._id)
+        self._ratings = remote._ratings
+        self._node_ratings = remote._node_ratings
 
     def inflate(self) -> None:
         if self._ratings is None:
@@ -1794,6 +1840,11 @@ class RatingMap(RemoteModel):
     def ratings(self) -> t.Sequence[CardboardCubeableRating]:
         self.inflate()
         return self._ratings
+
+    @property
+    def node_component_ratings(self) -> t.Sequence[NodeRatingComponent]:
+        self.inflate()
+        return self._node_ratings
 
     @property
     def created_at(self) -> datetime.datetime:
@@ -1819,6 +1870,11 @@ class RatingMap(RemoteModel):
                 for cardboard_cubeable in
                 remote['ratings']
             ] if 'ratings' in remote else None,
+            node_components_ratings = [
+                NodeRatingComponent.deserialize(node_rating, client)
+                for node_rating in
+                remote['node_rating_components']
+            ] if 'node_rating_components' in remote else None,
             created_at = datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT),
             client = client,
         )
