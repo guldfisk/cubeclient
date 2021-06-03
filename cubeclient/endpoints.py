@@ -134,6 +134,9 @@ class BaseNativeApiClient(models.ApiClient):
     def db_info(self) -> DbInfo:
         return DbInfo.deserialize(self._make_request('db-info'))
 
+    def min_client_version(self) -> str:
+        return self._make_request('min-supported-client-version')['version']
+
     def release(self, release: t.Union[models.CubeRelease, str, int]) -> models.CubeRelease:
         return CubeRelease.deserialize(
             self._make_request(
@@ -689,6 +692,10 @@ class AsyncNativeApiClient(AsyncClient, metaclass = _AsyncMeta):
         self._release_lock = threading.Lock()
         self._release_map: t.MutableMapping[int, CubeRelease] = {}
         self._release_processing: TaskAwaiter[int, CubeRelease] = TaskAwaiter()
+
+    @property
+    def executor(self) -> ThreadPoolExecutor:
+        return self._executor
 
     def get_release_managed_noblock(self, release_id: int) -> t.Optional[CubeRelease]:
         with self._release_lock:

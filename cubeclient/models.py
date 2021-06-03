@@ -122,6 +122,10 @@ class ApiClient(BaseClient):
         pass
 
     @abstractmethod
+    def min_client_version(self) -> str:
+        pass
+
+    @abstractmethod
     def release(self, release: t.Union[CubeRelease, str, int]) -> CubeRelease:
         pass
 
@@ -269,6 +273,10 @@ class AsyncClient(BaseClient):
 
     @abstractmethod
     def db_info(self) -> Promise[DbInfo]:
+        pass
+
+    @abstractmethod
+    def min_client_version(self) -> Promise[str]:
         pass
 
     @abstractmethod
@@ -1788,7 +1796,7 @@ class NodeRatingComponent(RemoteModel):
     @property
     def rating_component(self) -> int:
         return self._rating_component
-    
+
     @property
     def rating(self) -> int:
         return self._rating_component
