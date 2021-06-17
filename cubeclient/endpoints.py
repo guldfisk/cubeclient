@@ -56,8 +56,15 @@ def download_db_from_remote(host: str, target: t.Union[t.BinaryIO, str]) -> None
 class BaseNativeApiClient(models.ApiClient):
     _DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
 
-    def __init__(self, host: str, db: CardDatabase, *, token: t.Optional[str] = None):
-        super().__init__(host, db, token = token)
+    def __init__(
+        self,
+        host: str,
+        db: CardDatabase,
+        *,
+        scheme: str = 'https',
+        token: t.Optional[str] = None,
+    ):
+        super().__init__(host, db, token = token, scheme = scheme)
 
         self._strategy = RawStrategy(db)
 
@@ -92,7 +99,7 @@ class BaseNativeApiClient(models.ApiClient):
         if self._token is not None:
             headers.setdefault('Authorization', 'Token ' + self._token)
 
-        url = f'http://{self._host}/{"" if exclude_api else "api/"}{endpoint}{"" if exclude_api else "/"}'
+        url = f'{self._scheme}://{self._host}/{"" if exclude_api else "api/"}{endpoint}{"" if exclude_api else "/"}'
 
         logging.info('{} {} {}'.format(method, url, kwargs))
 
@@ -730,6 +737,10 @@ class AsyncNativeApiClient(AsyncClient, metaclass = _AsyncMeta):
     @property
     def synchronous(self) -> StaticNativeApiClient:
         return self._wrapping
+
+    @property
+    def scheme(self) -> str:
+        return self._wrapping.scheme
 
     @property
     def host(self) -> str:

@@ -6,6 +6,7 @@ import typing as t
 from abc import ABC, abstractmethod
 from decimal import Decimal
 from enum import Enum
+from urllib.parse import urlparse
 
 from promise import Promise
 
@@ -36,9 +37,19 @@ DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
 
 class BaseClient(ABC):
 
+    @classmethod
+    def parse_host(cls, host: str, scheme: str = 'https') -> t.Tuple[str, str]:
+        parsed = urlparse(host if '//' in host else '//' + host)
+        return parsed.scheme or scheme, parsed.netloc or parsed.path
+
     @property
     def synchronous(self) -> BaseClient:
         return self
+
+    @property
+    @abstractmethod
+    def scheme(self) -> str:
+        pass
 
     @property
     @abstractmethod
@@ -67,14 +78,25 @@ class BaseClient(ABC):
 
 class ApiClient(BaseClient):
 
-    def __init__(self, host: str, db: CardDatabase, *, token: t.Optional[str] = None):
-        self._host = host
+    def __init__(
+        self,
+        host: str,
+        db: CardDatabase,
+        *,
+        scheme: str = 'https',
+        token: t.Optional[str] = None,
+    ):
+        self._scheme, self._host = self.parse_host(host, scheme)
         self._db = db
         self._token = token
         self._user = None
         self._inflator: t.Optional[RawStrategy] = None
 
         self._user_lock = threading.Lock()
+
+    @property
+    def scheme(self) -> str:
+        return self._scheme
 
     @property
     def host(self) -> str:
