@@ -1595,7 +1595,7 @@ class ScheduledMatch(RemoteModel):
         return self._result
 
     @property
-    def round(self):
+    def round(self) -> int:
         if self._round is None:
             c = 0
             for _round in self.tournament.rounds:
