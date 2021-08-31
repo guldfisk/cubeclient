@@ -39,7 +39,7 @@ T = t.TypeVar('T')
 
 
 def _download_db_from_remote(host: str, target: t.BinaryIO) -> None:
-    uri = f'http://{host}/db'
+    uri = f'https://{host}/db'
     logging.info(f'Downloading db from {uri}')
     for chunk in r.get(uri, stream = True).iter_content(chunk_size = 1024):
         target.write(chunk)

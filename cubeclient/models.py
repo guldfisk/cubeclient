@@ -29,6 +29,7 @@ from magiccube.laps.traps.tree.printingtree import CardboardNodeChild
 from magiccube.update.cubeupdate import VerboseCubePatch
 
 
+T = t.TypeVar('T')
 R = t.TypeVar('R')
 P = t.TypeVar('P', bound = t.Union[Printing, Cardboard])
 
@@ -1889,6 +1890,16 @@ class RatingMap(RemoteModel):
                 self._ratings
             }
         return self._map[item]
+
+    def get(self, item: CardboardCubeable, default: T = None) -> t.Union[CardboardCubeableRating, T]:
+        if self._map is None:
+            self.inflate()
+            self._map = {
+                rating.cardboard_cubeable: rating
+                for rating in
+                self._ratings
+            }
+        return self._map.get(item, default)
 
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> RatingMap:
