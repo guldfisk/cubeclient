@@ -63,8 +63,9 @@ class BaseNativeApiClient(models.ApiClient):
         *,
         scheme: str = 'https',
         token: t.Optional[str] = None,
+        verify_ssl: bool = True,
     ):
-        super().__init__(host, db, token = token, scheme = scheme)
+        super().__init__(host, db, token = token, scheme = scheme, verify_ssl = verify_ssl)
 
         self._strategy = RawStrategy(db)
 
@@ -110,6 +111,7 @@ class BaseNativeApiClient(models.ApiClient):
             params = kwargs,
             headers = headers,
             stream = stream,
+            verify = self._verify_ssl,
         )
         response.raise_for_status()
         if stream:
@@ -688,8 +690,9 @@ class AsyncNativeApiClient(AsyncClient, metaclass = _AsyncMeta):
         *,
         executor: t.Union[ThreadPoolExecutor, int, None] = None,
         token: t.Optional[str] = None,
+        verify_ssl: bool = True,
     ):
-        self._wrapping = StaticNativeApiClient(host, db, token = token)
+        self._wrapping = StaticNativeApiClient(host, db, token = token, verify_ssl = verify_ssl)
         self._executor = (
             executor
             if isinstance(executor, ThreadPoolExecutor) else

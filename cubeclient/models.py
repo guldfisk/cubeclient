@@ -86,12 +86,14 @@ class ApiClient(BaseClient):
         *,
         scheme: str = 'https',
         token: t.Optional[str] = None,
+        verify_ssl: bool = True,
     ):
         self._scheme, self._host = self.parse_host(host, scheme)
         self._db = db
         self._token = token
         self._user = None
         self._inflator: t.Optional[RawStrategy] = None
+        self._verify_ssl = verify_ssl
 
         self._user_lock = threading.Lock()
 
