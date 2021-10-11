@@ -38,19 +38,19 @@ from cubeclient.models import (
 T = t.TypeVar('T')
 
 
-def _download_db_from_remote(host: str, target: t.BinaryIO) -> None:
+def _download_db_from_remote(host: str, target: t.BinaryIO, **kwargs) -> None:
     uri = f'https://{host}/db'
     logging.info(f'Downloading db from {uri}')
-    for chunk in r.get(uri, stream = True).iter_content(chunk_size = 1024):
+    for chunk in r.get(uri, stream = True, **kwargs).iter_content(chunk_size = 1024):
         target.write(chunk)
 
 
-def download_db_from_remote(host: str, target: t.Union[t.BinaryIO, str]) -> None:
+def download_db_from_remote(host: str, target: t.Union[t.BinaryIO, str], **kwargs) -> None:
     if isinstance(target, str):
         with open(target, 'wb') as f:
-            _download_db_from_remote(host, f)
+            _download_db_from_remote(host, f, **kwargs)
     else:
-        _download_db_from_remote(host, target)
+        _download_db_from_remote(host, target, **kwargs)
 
 
 class BaseNativeApiClient(models.ApiClient):
@@ -119,7 +119,7 @@ class BaseNativeApiClient(models.ApiClient):
         return response.json()
 
     def download_db_from_remote(self, target: t.Union[t.BinaryIO, str]) -> None:
-        download_db_from_remote(self._host, target)
+        download_db_from_remote(self._host, target, verify=self._verify_ssl)
 
     def login(self, username: str, password: str) -> str:
         response = self._make_request(
