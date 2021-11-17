@@ -135,6 +135,10 @@ class ApiClient(BaseClient):
         pass
 
     @abstractmethod
+    def report_error(self, error: str, traceback: str) -> None:
+        pass
+
+    @abstractmethod
     def login(self, username: str, password: str) -> str:
         pass
 
@@ -286,6 +290,10 @@ class AsyncClient(BaseClient):
 
     @abstractmethod
     def download_db_from_remote(self, target: t.Union[t.BinaryIO, str]) -> Promise[None]:
+        pass
+
+    @abstractmethod
+    def report_error(self, error: str, traceback: str) -> Promise[None]:
         pass
 
     @abstractmethod

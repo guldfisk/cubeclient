@@ -121,6 +121,16 @@ class BaseNativeApiClient(models.ApiClient):
     def download_db_from_remote(self, target: t.Union[t.BinaryIO, str]) -> None:
         download_db_from_remote(self._host, target, verify=self._verify_ssl)
 
+    def report_error(self, error: str, traceback: str) -> None:
+        self._make_request(
+            'client-error',
+            method = 'POST',
+            data = {
+                'error': error,
+                'trace': traceback,
+            }
+        )
+
     def login(self, username: str, password: str) -> str:
         response = self._make_request(
             'auth/login',
