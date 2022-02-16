@@ -28,7 +28,6 @@ setup(
         'requests',
         'cachetools',
         'promise',
-        'frozendict',
         'bidict',
         'simplejson',
         'Pillow',
