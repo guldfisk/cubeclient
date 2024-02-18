@@ -4,3 +4,4 @@ __pycache__/
 package/
 out/
 /streammerger.py
+/venv/

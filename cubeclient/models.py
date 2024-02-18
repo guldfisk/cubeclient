@@ -8,39 +8,40 @@ from decimal import Decimal
 from enum import Enum
 from urllib.parse import urlparse
 
-from promise import Promise
-
-from magiccube.collections.cubeable import (
-    CardboardCubeable, Cubeable, deserialize_cardboard_cubeable, deserialize_cubeable, deserialize_cardboard_node_child
-)
-from mtgorp.db.database import CardDatabase
-from mtgorp.models.collections.deck import Deck
-from mtgorp.models.interfaces import Expansion, Cardboard, Printing
-from mtgorp.models.serilization.strategies.raw import RawStrategy
-from mtgorp.models.tournaments import tournaments as to
-from mtgorp.models.tournaments.matches import MatchType
-
 from magiccube.collections.cube import Cube
+from magiccube.collections.cubeable import (
+    CardboardCubeable,
+    Cubeable,
+    deserialize_cardboard_cubeable,
+    deserialize_cardboard_node_child,
+    deserialize_cubeable,
+)
 from magiccube.collections.infinites import Infinites
 from magiccube.collections.laps import TrapCollection
 from magiccube.collections.meta import MetaCube
-from magiccube.collections.nodecollection import NodeCollection, GroupMap
+from magiccube.collections.nodecollection import GroupMap, NodeCollection
 from magiccube.laps.traps.tree.printingtree import CardboardNodeChild
 from magiccube.update.cubeupdate import VerboseCubePatch
+from mtgorp.db.database import CardDatabase
+from mtgorp.models.collections.deck import Deck
+from mtgorp.models.interfaces import Cardboard, Expansion, Printing
+from mtgorp.models.serilization.strategies.raw import RawStrategy
+from mtgorp.models.tournaments import tournaments as to
+from mtgorp.models.tournaments.matches import MatchType
+from promise import Promise
 
 
-T = t.TypeVar('T')
-R = t.TypeVar('R')
-P = t.TypeVar('P', bound = t.Union[Printing, Cardboard])
+T = t.TypeVar("T")
+R = t.TypeVar("R")
+P = t.TypeVar("P", bound=t.Union[Printing, Cardboard])
 
-DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
+DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
 
 
 class BaseClient(ABC):
-
     @classmethod
-    def parse_host(cls, host: str, scheme: str = 'https') -> t.Tuple[str, str]:
-        parsed = urlparse(host if '//' in host else '//' + host)
+    def parse_host(cls, host: str, scheme: str = "https") -> t.Tuple[str, str]:
+        parsed = urlparse(host if "//" in host else "//" + host)
         return parsed.scheme or scheme, parsed.netloc or parsed.path
 
     @property
@@ -78,13 +79,12 @@ class BaseClient(ABC):
 
 
 class ApiClient(BaseClient):
-
     def __init__(
         self,
         host: str,
         db: CardDatabase,
         *,
-        scheme: str = 'https',
+        scheme: str = "https",
         token: t.Optional[str] = None,
         verify_ssl: bool = True,
     ):
@@ -206,8 +206,8 @@ class ApiClient(BaseClient):
         self,
         query: str,
         offset: int = 0,
-        limit = 10,
-        order_by: str = 'name',
+        limit=10,
+        order_by: str = "name",
         descending: bool = False,
         search_target: t.Type[P] = Printing,
     ) -> PaginatedResponse[P]:
@@ -224,7 +224,7 @@ class ApiClient(BaseClient):
         limit: int = 10,
         *,
         filters: t.Optional[t.Mapping[str, t.Any]] = None,
-        sort_key: str = 'created_at',
+        sort_key: str = "created_at",
         ascending: bool = False,
     ) -> PaginatedResponse[LimitedSession]:
         pass
@@ -251,7 +251,8 @@ class ApiClient(BaseClient):
 
     @abstractmethod
     def scheduled_matches(
-        self, user: t.Union[str, int, User],
+        self,
+        user: t.Union[str, int, User],
         offset: int = 0,
         limit: int = 10,
     ) -> PaginatedResponse[ScheduledMatch]:
@@ -287,7 +288,6 @@ class ApiClient(BaseClient):
 
 
 class AsyncClient(BaseClient):
-
     @abstractmethod
     def download_db_from_remote(self, target: t.Union[t.BinaryIO, str]) -> Promise[None]:
         pass
@@ -364,8 +364,8 @@ class AsyncClient(BaseClient):
         self,
         query: str,
         offset: int = 0,
-        limit = 10,
-        order_by: str = 'name',
+        limit=10,
+        order_by: str = "name",
         descending: bool = False,
         search_target: t.Type[P] = Printing,
     ) -> Promise[StaticPaginationResult[P]]:
@@ -382,7 +382,7 @@ class AsyncClient(BaseClient):
         limit: int = 10,
         *,
         filters: t.Optional[t.Mapping[str, t.Any]] = None,
-        sort_key: str = 'created_at',
+        sort_key: str = "created_at",
         ascending: bool = False,
     ) -> Promise[StaticPaginationResult[LimitedSession]]:
         pass
@@ -409,7 +409,8 @@ class AsyncClient(BaseClient):
 
     @abstractmethod
     def scheduled_matches(
-        self, user: t.Union[str, int, User],
+        self,
+        user: t.Union[str, int, User],
         offset: int = 0,
         limit: int = 10,
     ) -> Promise[PaginatedResponse[ScheduledMatch]]:
@@ -445,7 +446,6 @@ class AsyncClient(BaseClient):
 
 
 class PaginatedResponse(t.Sequence[R]):
-
     @property
     @abstractmethod
     def hits(self) -> int:
@@ -469,7 +469,6 @@ class PaginatedResponse(t.Sequence[R]):
 
 
 class StaticPaginationResult(PaginatedResponse[R]):
-
     def __init__(
         self,
         items: t.Sequence[R],
@@ -507,7 +506,7 @@ class StaticPaginationResult(PaginatedResponse[R]):
         return self._items.__len__()
 
     def __repr__(self):
-        return '{}({}, {}, {}, {})'.format(
+        return "{}({}, {}, {}, {})".format(
             self.__class__.__name__,
             self._hits,
             self._offset,
@@ -517,7 +516,6 @@ class StaticPaginationResult(PaginatedResponse[R]):
 
 
 class DynamicPaginatedResponse(PaginatedResponse[R]):
-
     def __init__(
         self,
         endpoint: t.Callable[[int, int], t.Any],
@@ -531,10 +529,10 @@ class DynamicPaginatedResponse(PaginatedResponse[R]):
 
         response = endpoint(offset, limit)
 
-        self._count = response['count']
+        self._count = response["count"]
         self._items: t.List[t.Optional[R]] = [None for _ in range(self._count)]
-        items = list(map(serializer, response['results']))
-        self._items[offset:offset + len(items)] = items
+        items = list(map(serializer, response["results"]))
+        self._items[offset : offset + len(items)] = items
 
     @property
     def hits(self) -> int:
@@ -544,7 +542,7 @@ class DynamicPaginatedResponse(PaginatedResponse[R]):
         for offset_index, item in enumerate(
             map(
                 self._serializer,
-                self._endpoint(index, self._limit)['results'],
+                self._endpoint(index, self._limit)["results"],
             )
         ):
             try:
@@ -579,21 +577,16 @@ class DynamicPaginatedResponse(PaginatedResponse[R]):
                 if in_none:
                     continue
                 in_none = True
-                yield '...'
+                yield "..."
             else:
                 in_none = False
                 yield str(item)
 
     def __repr__(self):
-        return '{}({}, [{}])'.format(
-            self.__class__.__name__,
-            self._count,
-            ', '.join(self._repr_iter())
-        )
+        return "{}({}, [{}])".format(self.__class__.__name__, self._count, ", ".join(self._repr_iter()))
 
 
 class RemoteModel(ABC):
-
     def __init__(self, model_id: t.Union[str, int], client: ApiClient):
         self._id = model_id
         self._api_client = client
@@ -605,26 +598,23 @@ class RemoteModel(ABC):
     # @abstractmethod  Not yet, too lazy to migrate
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> RemoteModel:
-        raise NotImplemented()
+        raise NotImplementedError()
 
     def __hash__(self) -> int:
         return hash(self._id)
 
     def __eq__(self, other) -> bool:
-        return (
-            isinstance(other, self.__class__)
-            and self._id == other._id
-        )
+        return isinstance(other, self.__class__) and self._id == other._id
 
     def __repr__(self):
-        return '{}({})'.format(
+        return "{}({})".format(
             self.__class__.__name__,
             self._id,
         )
 
 
 class DbInfo(object):
-    _datetime_format = '%Y-%m-%dT%H:%M:%S'
+    _datetime_format = "%Y-%m-%dT%H:%M:%S"
 
     def __init__(
         self,
@@ -657,15 +647,14 @@ class DbInfo(object):
     @classmethod
     def deserialize(cls, remote: t.Mapping[str, t.Any]) -> DbInfo:
         return cls(
-            created_at = datetime.datetime.strptime(remote['created_at'], cls._datetime_format),
-            json_updated_at = datetime.datetime.strptime(remote['json_updated_at'], cls._datetime_format),
-            last_expansion_name = remote['last_expansion_name'],
-            checksum = remote['checksum'],
+            created_at=datetime.datetime.strptime(remote["created_at"], cls._datetime_format),
+            json_updated_at=datetime.datetime.strptime(remote["json_updated_at"], cls._datetime_format),
+            last_expansion_name=remote["last_expansion_name"],
+            checksum=remote["checksum"],
         )
 
 
 class User(RemoteModel):
-
     def __init__(self, model_id: t.Union[str, int], username: str, client: ApiClient):
         super().__init__(model_id, client)
         self._username = username
@@ -673,9 +662,9 @@ class User(RemoteModel):
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> User:
         return cls(
-            model_id = remote['id'],
-            username = remote['username'],
-            client = client,
+            model_id=remote["id"],
+            username=remote["username"],
+            client=client,
         )
 
     @property
@@ -684,7 +673,6 @@ class User(RemoteModel):
 
 
 class VersionedCube(RemoteModel):
-
     def __init__(
         self,
         model_id: t.Union[str, int],
@@ -709,17 +697,14 @@ class VersionedCube(RemoteModel):
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> VersionedCube:
         return cls(
-            model_id = remote['id'],
-            name = remote['name'],
-            created_at = datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT),
-            description = remote['description'],
-            releases = [
-                CubeRelease.deserialize(release, client)
-                for release in
-                remote['releases']
-            ] if 'releases' in remote else
-            None,
-            client = client,
+            model_id=remote["id"],
+            name=remote["name"],
+            created_at=datetime.datetime.strptime(remote["created_at"], DATETIME_FORMAT),
+            description=remote["description"],
+            releases=[CubeRelease.deserialize(release, client) for release in remote["releases"]]
+            if "releases" in remote
+            else None,
+            client=client,
         )
 
     @property
@@ -754,7 +739,6 @@ class VersionedCube(RemoteModel):
 
 
 class CubeRelease(RemoteModel):
-
     def __init__(
         self,
         model_id: t.Union[str, int],
@@ -791,51 +775,41 @@ class CubeRelease(RemoteModel):
     def deserialize(cls, remote: t.Any, client: ApiClient) -> CubeRelease:
         strategy = RawStrategy(client.db)
         return cls(
-            model_id = remote['id'],
-            created_at = (
-                datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT)
-                if 'created_at' in remote else
-                None
+            model_id=remote["id"],
+            created_at=(
+                datetime.datetime.strptime(remote["created_at"], DATETIME_FORMAT) if "created_at" in remote else None
             ),
-            name = remote['name'],
-            intended_size = remote.get('intended_size'),
-            cube = (
-                strategy.deserialize(
-                    Cube,
-                    remote['cube']
-                )
-                if 'cube' in remote else
-                None
+            name=remote["name"],
+            intended_size=remote.get("intended_size"),
+            cube=(strategy.deserialize(Cube, remote["cube"]) if "cube" in remote else None),
+            versioned_cube=(
+                VersionedCube.deserialize(remote["versioned_cube"], client) if "versioned_cube" in remote else None
             ),
-            versioned_cube = (
-                VersionedCube.deserialize(remote['versioned_cube'], client)
-                if 'versioned_cube' in remote else
-                None
-            ),
-            constrained_nodes = (
+            constrained_nodes=(
                 strategy.deserialize(
                     NodeCollection,
-                    remote['constrained_nodes']['constrained_nodes'],
+                    remote["constrained_nodes"]["constrained_nodes"],
                 )
-                if 'constrained_nodes' in remote else
-                None
+                if "constrained_nodes" in remote
+                else None
             ),
-            group_map = (
+            group_map=(
                 strategy.deserialize(
                     GroupMap,
-                    remote['constrained_nodes']['group_map'],
+                    remote["constrained_nodes"]["group_map"],
                 )
-                if 'constrained_nodes' in remote else
-                None
+                if "constrained_nodes" in remote
+                else None
             ),
-            infinites = (
+            infinites=(
                 strategy.deserialize(
                     Infinites,
-                    remote['infinites'],
-                ) if 'infinites' in remote else
-                None
+                    remote["infinites"],
+                )
+                if "infinites" in remote
+                else None
             ),
-            client = client,
+            client=client,
         )
 
     @property
@@ -886,7 +860,6 @@ class CubeRelease(RemoteModel):
 
 
 class PatchModel(RemoteModel):
-
     def __init__(
         self,
         model_id: t.Union[str, int],
@@ -936,7 +909,6 @@ class PatchModel(RemoteModel):
 
 
 class DistributionPossibility(RemoteModel):
-
     def __init__(
         self,
         model_id: t.Union[str, int],
@@ -970,7 +942,6 @@ class DistributionPossibility(RemoteModel):
 
 
 class BoosterSpecification(RemoteModel):
-
     def __init__(self, model_id: t.Union[str, int], amount: int, client: ApiClient):
         super().__init__(model_id, client)
         self._amount = amount
@@ -981,11 +952,11 @@ class BoosterSpecification(RemoteModel):
 
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> BoosterSpecification:
-        _type = _booster_specification_map[remote['type']]
+        _type = _booster_specification_map[remote["type"]]
         return _type(
-            model_id = remote['id'],
-            amount = remote['amount'],
-            client = client,
+            model_id=remote["id"],
+            amount=remote["amount"],
+            client=client,
             **_type.deserialize_values(remote, client),
         )
 
@@ -996,7 +967,6 @@ class BoosterSpecification(RemoteModel):
 
 
 class CubeBoosterSpecification(BoosterSpecification):
-
     def __init__(
         self,
         model_id: t.Union[str, int],
@@ -1005,7 +975,7 @@ class CubeBoosterSpecification(BoosterSpecification):
         size: int,
         allow_intersection: bool,
         allow_repeat: bool,
-        client: ApiClient
+        client: ApiClient,
     ):
         super().__init__(model_id, amount, client)
         self._release = release
@@ -1032,22 +1002,15 @@ class CubeBoosterSpecification(BoosterSpecification):
     @classmethod
     def deserialize_values(cls, remote: t.Any, client: ApiClient) -> t.Mapping[str, t.Any]:
         return {
-            'release': CubeRelease.deserialize(remote['release'], client),
-            'size': remote['size'],
-            'allow_intersection': remote['allow_intersection'],
-            'allow_repeat': remote['allow_repeat'],
+            "release": CubeRelease.deserialize(remote["release"], client),
+            "size": remote["size"],
+            "allow_intersection": remote["allow_intersection"],
+            "allow_repeat": remote["allow_repeat"],
         }
 
 
 class ExpansionBoosterSpecification(BoosterSpecification):
-
-    def __init__(
-        self,
-        model_id: t.Union[str, int],
-        amount: int,
-        expansion: Expansion,
-        client: ApiClient
-    ):
+    def __init__(self, model_id: t.Union[str, int], amount: int, expansion: Expansion, client: ApiClient):
         super().__init__(model_id, amount, client)
         self._expansion = expansion
 
@@ -1058,19 +1021,12 @@ class ExpansionBoosterSpecification(BoosterSpecification):
     @classmethod
     def deserialize_values(cls, remote: t.Any, client: ApiClient) -> t.Mapping[str, t.Any]:
         return {
-            'expansion': client.db.expansions[remote['expansion_code']],
+            "expansion": client.db.expansions[remote["expansion_code"]],
         }
 
 
 class AllCardsBoosterSpecification(BoosterSpecification):
-
-    def __init__(
-        self,
-        model_id: t.Union[str, int],
-        amount: int,
-        respect_printings: bool,
-        client: ApiClient
-    ):
+    def __init__(self, model_id: t.Union[str, int], amount: int, respect_printings: bool, client: ApiClient):
         super().__init__(model_id, amount, client)
         self._respect_printings = respect_printings
 
@@ -1081,12 +1037,11 @@ class AllCardsBoosterSpecification(BoosterSpecification):
     @classmethod
     def deserialize_values(cls, remote: t.Any, client: ApiClient) -> t.Mapping[str, t.Any]:
         return {
-            'respect_printings': remote['respect_printings'],
+            "respect_printings": remote["respect_printings"],
         }
 
 
 class ChaosBoosterSpecification(BoosterSpecification):
-
     def __init__(
         self,
         model_id: t.Union[str, int],
@@ -1104,20 +1059,19 @@ class ChaosBoosterSpecification(BoosterSpecification):
     @classmethod
     def deserialize_values(cls, remote: t.Any, client: ApiClient) -> t.Mapping[str, t.Any]:
         return {
-            'same': remote['same'],
+            "same": remote["same"],
         }
 
 
 _booster_specification_map = {
-    'CubeBoosterSpecification': CubeBoosterSpecification,
-    'ExpansionBoosterSpecification': ExpansionBoosterSpecification,
-    'AllCardsBoosterSpecification': AllCardsBoosterSpecification,
-    'ChaosBoosterSpecification': ChaosBoosterSpecification,
+    "CubeBoosterSpecification": CubeBoosterSpecification,
+    "ExpansionBoosterSpecification": ExpansionBoosterSpecification,
+    "AllCardsBoosterSpecification": AllCardsBoosterSpecification,
+    "ChaosBoosterSpecification": ChaosBoosterSpecification,
 }
 
 
 class PoolSpecification(RemoteModel):
-
     def __init__(
         self,
         model_id: t.Union[str, int],
@@ -1134,13 +1088,12 @@ class PoolSpecification(RemoteModel):
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> PoolSpecification:
         return cls(
-            model_id = remote['id'],
-            booster_specifications = [
+            model_id=remote["id"],
+            booster_specifications=[
                 BoosterSpecification.deserialize(booster_specification, client)
-                for booster_specification in
-                remote['specifications']
+                for booster_specification in remote["specifications"]
             ],
-            client = client,
+            client=client,
         )
 
 
@@ -1182,23 +1135,19 @@ class LimitedSession(RemoteModel):
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> LimitedSession:
         return cls(
-            model_id = remote['id'],
-            name = remote['name'],
-            game_type = remote['game_type'],
-            players = {User.deserialize(player, client) for player in remote['players']},
-            state = cls.LimitedSessionState[remote['state']],
-            open_decks = remote['open_decks'],
-            open_pools = remote['open_pools'],
-            game_format = remote['format'],
-            created_at = datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT),
-            pool_specification = PoolSpecification.deserialize(remote['pool_specification'], client),
-            infinites = RawStrategy(client.db).deserialize(Infinites, remote['infinites']),
-            client = client,
-            pools = [
-                LimitedPool.deserialize(pool, client)
-                for pool in
-                remote['pools']
-            ] if 'pools' in remote else None
+            model_id=remote["id"],
+            name=remote["name"],
+            game_type=remote["game_type"],
+            players={User.deserialize(player, client) for player in remote["players"]},
+            state=cls.LimitedSessionState[remote["state"]],
+            open_decks=remote["open_decks"],
+            open_pools=remote["open_pools"],
+            game_format=remote["format"],
+            created_at=datetime.datetime.strptime(remote["created_at"], DATETIME_FORMAT),
+            pool_specification=PoolSpecification.deserialize(remote["pool_specification"], client),
+            infinites=RawStrategy(client.db).deserialize(Infinites, remote["infinites"]),
+            client=client,
+            pools=[LimitedPool.deserialize(pool, client) for pool in remote["pools"]] if "pools" in remote else None,
         )
 
     @property
@@ -1249,7 +1198,6 @@ class LimitedSession(RemoteModel):
 
 
 class LimitedDeck(RemoteModel):
-
     def __init__(
         self,
         deck_id: t.Union[str, int],
@@ -1268,12 +1216,12 @@ class LimitedDeck(RemoteModel):
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> LimitedDeck:
         return cls(
-            deck_id = remote['id'],
-            name = remote['name'],
-            created_at = datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT),
-            deck = RawStrategy(client.db).deserialize(Deck, remote['deck']) if 'deck' in remote else None,
-            user = User.deserialize(remote['user'], client = client),
-            client = client,
+            deck_id=remote["id"],
+            name=remote["name"],
+            created_at=datetime.datetime.strptime(remote["created_at"], DATETIME_FORMAT),
+            deck=RawStrategy(client.db).deserialize(Deck, remote["deck"]) if "deck" in remote else None,
+            user=User.deserialize(remote["user"], client=client),
+            client=client,
         )
 
     @property
@@ -1296,7 +1244,6 @@ class LimitedDeck(RemoteModel):
 
 
 class LimitedPool(RemoteModel):
-
     def __init__(
         self,
         pool_id: t.Union[str, int],
@@ -1317,16 +1264,14 @@ class LimitedPool(RemoteModel):
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> LimitedPool:
         return cls(
-            pool_id = remote['id'],
-            user = User.deserialize(remote['user'], client),
-            client = client,
-            decks = [
-                deck if isinstance(deck, int) else LimitedDeck.deserialize(deck, client)
-                for deck in
-                remote['decks']
+            pool_id=remote["id"],
+            user=User.deserialize(remote["user"], client),
+            client=client,
+            decks=[
+                deck if isinstance(deck, int) else LimitedDeck.deserialize(deck, client) for deck in remote["decks"]
             ],
-            session = LimitedSession.deserialize(remote['session'], client) if 'session' in remote else None,
-            pool = RawStrategy(client.db).deserialize(Cube, remote['pool']) if 'pool' in remote else None,
+            session=LimitedSession.deserialize(remote["session"], client) if "session" in remote else None,
+            pool=RawStrategy(client.db).deserialize(Cube, remote["pool"]) if "pool" in remote else None,
         )
 
     def _fetch(self) -> None:
@@ -1394,38 +1339,34 @@ class Tournament(RemoteModel):
 
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> Tournament:
-        match_type = MatchType.matches_map[remote['match_type']['name']]
+        match_type = MatchType.matches_map[remote["match_type"]["name"]]
         tournament = cls(
-            tournament_id = remote['id'],
-            state = cls.TournamentState[remote['state']],
-            name = remote['name'],
-            tournament_type = to.Tournament.tournaments_map[remote['tournament_type']],
-            match_type = match_type(
-                **match_type.options_schema.deserialize_raw(
-                    remote['match_type']
-                )
-            ),
-            participants = frozenset(
+            tournament_id=remote["id"],
+            state=cls.TournamentState[remote["state"]],
+            name=remote["name"],
+            tournament_type=to.Tournament.tournaments_map[remote["tournament_type"]],
+            match_type=match_type(**match_type.options_schema.deserialize_raw(remote["match_type"])),
+            participants=frozenset(
                 TournamentParticipant.deserialize(
                     participant,
-                    client = client,
-                ) for participant in
-                remote['participants']
+                    client=client,
+                )
+                for participant in remote["participants"]
             ),
-            created_at = datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT),
-            rounds = [
+            created_at=datetime.datetime.strptime(remote["created_at"], DATETIME_FORMAT),
+            rounds=[
                 TournamentRound.deserialize(
                     _round,
-                    client = client,
-                ) for _round in
-                remote['rounds']
-            ] if isinstance(remote.get('rounds'), list) else None,
-            finished_at = (
-                datetime.datetime.strptime(remote['finished_at'], DATETIME_FORMAT)
-                if remote['finished_at'] else
-                None
+                    client=client,
+                )
+                for _round in remote["rounds"]
+            ]
+            if isinstance(remote.get("rounds"), list)
+            else None,
+            finished_at=(
+                datetime.datetime.strptime(remote["finished_at"], DATETIME_FORMAT) if remote["finished_at"] else None
             ),
-            client = client,
+            client=client,
         )
 
         if tournament._rounds:
@@ -1471,7 +1412,6 @@ class Tournament(RemoteModel):
 
 
 class TournamentParticipant(RemoteModel):
-
     def __init__(
         self,
         participant_id: int,
@@ -1488,14 +1428,16 @@ class TournamentParticipant(RemoteModel):
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> TournamentParticipant:
         return cls(
-            participant_id = remote['id'],
-            deck = LimitedDeck.deserialize(remote['deck'], client = client),
-            player = User.deserialize(
-                remote['player'],
-                client = client,
-            ) if remote.get('player') else None,
-            seed = remote['seed'],
-            client = client,
+            participant_id=remote["id"],
+            deck=LimitedDeck.deserialize(remote["deck"], client=client),
+            player=User.deserialize(
+                remote["player"],
+                client=client,
+            )
+            if remote.get("player")
+            else None,
+            seed=remote["seed"],
+            client=client,
         )
 
     @property
@@ -1513,12 +1455,11 @@ class TournamentParticipant(RemoteModel):
     @property
     def tag_line(self):
         if self._player is None:
-            return f'{self._deck.name} ({self._deck.user.username}'
-        return f'{self._player.username} - {self._deck.name}'
+            return f"{self._deck.name} ({self._deck.user.username}"
+        return f"{self._player.username} - {self._deck.name}"
 
 
 class TournamentRound(RemoteModel):
-
     def __init__(
         self,
         round_id: int,
@@ -1533,16 +1474,16 @@ class TournamentRound(RemoteModel):
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> TournamentRound:
         return cls(
-            round_id = remote['id'],
-            index = remote['index'],
-            matches = frozenset(
+            round_id=remote["id"],
+            index=remote["index"],
+            matches=frozenset(
                 ScheduledMatch.deserialize(
                     match,
-                    client = client,
-                ) for match in
-                remote['matches']
+                    client=client,
+                )
+                for match in remote["matches"]
             ),
-            client = client,
+            client=client,
         )
 
     @property
@@ -1551,7 +1492,6 @@ class TournamentRound(RemoteModel):
 
 
 class ScheduledMatch(RemoteModel):
-
     def __init__(
         self,
         match_id: int,
@@ -1570,25 +1510,28 @@ class ScheduledMatch(RemoteModel):
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> ScheduledMatch:
         return cls(
-            match_id = remote['id'],
-            seats = frozenset(
+            match_id=remote["id"],
+            seats=frozenset(
                 ScheduledSeat.deserialize(
                     seat,
-                    client = client,
-                ) for seat in
-                remote['seats']
+                    client=client,
+                )
+                for seat in remote["seats"]
             ),
-            result = MatchResult.deserialize(
-                remote['result'],
-                client = client,
-            ) if remote.get('result') else None,
-            tournament = Tournament.deserialize(
-                remote['tournament'],
-                client = client,
-            ) if 'tournament' in remote else
-            None,
-            tournament_round = remote.get('round'),
-            client = client,
+            result=MatchResult.deserialize(
+                remote["result"],
+                client=client,
+            )
+            if remote.get("result")
+            else None,
+            tournament=Tournament.deserialize(
+                remote["tournament"],
+                client=client,
+            )
+            if "tournament" in remote
+            else None,
+            tournament_round=remote.get("round"),
+            client=client,
         )
 
     @property
@@ -1618,7 +1561,6 @@ class ScheduledMatch(RemoteModel):
 
 
 class MatchResult(RemoteModel):
-
     def __init__(
         self,
         result_id: int,
@@ -1631,9 +1573,9 @@ class MatchResult(RemoteModel):
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> MatchResult:
         return cls(
-            result_id = remote['id'],
-            draws = remote['draws'],
-            client = client,
+            result_id=remote["id"],
+            draws=remote["draws"],
+            client=client,
         )
 
     @property
@@ -1642,7 +1584,6 @@ class MatchResult(RemoteModel):
 
 
 class ScheduledSeat(RemoteModel):
-
     def __init__(
         self,
         seat_id: int,
@@ -1657,16 +1598,18 @@ class ScheduledSeat(RemoteModel):
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> ScheduledSeat:
         return cls(
-            seat_id = remote['id'],
-            participant = TournamentParticipant.deserialize(
-                remote['participant'],
-                client = client,
+            seat_id=remote["id"],
+            participant=TournamentParticipant.deserialize(
+                remote["participant"],
+                client=client,
             ),
-            result = SeatResult.deserialize(
-                remote['result'],
-                client = client,
-            ) if remote.get('result') else None,
-            client = client,
+            result=SeatResult.deserialize(
+                remote["result"],
+                client=client,
+            )
+            if remote.get("result")
+            else None,
+            client=client,
         )
 
     @property
@@ -1679,7 +1622,6 @@ class ScheduledSeat(RemoteModel):
 
 
 class SeatResult(RemoteModel):
-
     def __init__(
         self,
         result_id: int,
@@ -1692,9 +1634,9 @@ class SeatResult(RemoteModel):
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> SeatResult:
         return cls(
-            result_id = remote['id'],
-            wins = remote['wins'],
-            client = client,
+            result_id=remote["id"],
+            wins=remote["wins"],
+            client=client,
         )
 
     @property
@@ -1703,7 +1645,6 @@ class SeatResult(RemoteModel):
 
 
 class RatingPoint(RemoteModel):
-
     def __init__(
         self,
         rating_id: int,
@@ -1726,15 +1667,14 @@ class RatingPoint(RemoteModel):
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> RatingPoint:
         return cls(
-            rating_id = remote['id'],
-            rating = remote['rating'],
-            rating_map = RatingMap.deserialize(remote['rating_map'], client),
-            client = client,
+            rating_id=remote["id"],
+            rating=remote["rating"],
+            rating_map=RatingMap.deserialize(remote["rating_map"], client),
+            client=client,
         )
 
 
 class NodeRatingPoint(RatingPoint):
-
     def __init__(
         self,
         rating_id: int,
@@ -1757,16 +1697,15 @@ class NodeRatingPoint(RatingPoint):
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> NodeRatingPoint:
         return cls(
-            rating_id = remote['id'],
-            rating = remote['rating_component'],
-            weight = Decimal(remote['weight']),
-            rating_map = RatingMap.deserialize(remote['rating_map'], client),
-            client = client,
+            rating_id=remote["id"],
+            rating=remote["rating_component"],
+            weight=Decimal(remote["weight"]),
+            rating_map=RatingMap.deserialize(remote["rating_map"], client),
+            client=client,
         )
 
 
 class CardboardCubeableRating(RemoteModel):
-
     def __init__(
         self,
         rating_id: int,
@@ -1795,16 +1734,15 @@ class CardboardCubeableRating(RemoteModel):
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> CardboardCubeableRating:
         return cls(
-            rating_id = remote['id'],
-            cardboard_cubeable = deserialize_cardboard_cubeable(remote['cardboard_cubeable'], client.inflator),
-            example_cubeable = deserialize_cubeable(remote['example_cubeable'], client.inflator),
-            rating = remote['rating'],
-            client = client,
+            rating_id=remote["id"],
+            cardboard_cubeable=deserialize_cardboard_cubeable(remote["cardboard_cubeable"], client.inflator),
+            example_cubeable=deserialize_cubeable(remote["example_cubeable"], client.inflator),
+            rating=remote["rating"],
+            client=client,
         )
 
 
 class NodeRatingComponent(RemoteModel):
-
     def __init__(
         self,
         rating_id: int,
@@ -1837,16 +1775,15 @@ class NodeRatingComponent(RemoteModel):
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> NodeRatingComponent:
         return cls(
-            rating_id = remote['id'],
-            node = deserialize_cardboard_node_child(remote['node'], client.inflator),
-            rating_component = remote['rating_component'],
-            weight = Decimal(remote['weight']),
-            client = client,
+            rating_id=remote["id"],
+            node=deserialize_cardboard_node_child(remote["node"], client.inflator),
+            rating_component=remote["rating_component"],
+            weight=Decimal(remote["weight"]),
+            client=client,
         )
 
 
 class RatingMap(RemoteModel):
-
     def __init__(
         self,
         map_id: int,
@@ -1894,38 +1831,32 @@ class RatingMap(RemoteModel):
     def __getitem__(self, item: CardboardCubeable) -> CardboardCubeableRating:
         if self._map is None:
             self.inflate()
-            self._map = {
-                rating.cardboard_cubeable: rating
-                for rating in
-                self._ratings
-            }
+            self._map = {rating.cardboard_cubeable: rating for rating in self._ratings}
         return self._map[item]
 
     def get(self, item: CardboardCubeable, default: T = None) -> t.Union[CardboardCubeableRating, T]:
         if self._map is None:
             self.inflate()
-            self._map = {
-                rating.cardboard_cubeable: rating
-                for rating in
-                self._ratings
-            }
+            self._map = {rating.cardboard_cubeable: rating for rating in self._ratings}
         return self._map.get(item, default)
 
     @classmethod
     def deserialize(cls, remote: t.Any, client: ApiClient) -> RatingMap:
         return cls(
-            map_id = remote['id'],
-            release = CubeRelease.deserialize(remote['release'], client),
-            ratings = [
+            map_id=remote["id"],
+            release=CubeRelease.deserialize(remote["release"], client),
+            ratings=[
                 CardboardCubeableRating.deserialize(cardboard_cubeable, client)
-                for cardboard_cubeable in
-                remote['ratings']
-            ] if 'ratings' in remote else None,
-            node_components_ratings = [
+                for cardboard_cubeable in remote["ratings"]
+            ]
+            if "ratings" in remote
+            else None,
+            node_components_ratings=[
                 NodeRatingComponent.deserialize(node_rating, client)
-                for node_rating in
-                remote['node_rating_components']
-            ] if 'node_rating_components' in remote else None,
-            created_at = datetime.datetime.strptime(remote['created_at'], DATETIME_FORMAT),
-            client = client,
+                for node_rating in remote["node_rating_components"]
+            ]
+            if "node_rating_components" in remote
+            else None,
+            created_at=datetime.datetime.strptime(remote["created_at"], DATETIME_FORMAT),
+            client=client,
         )
